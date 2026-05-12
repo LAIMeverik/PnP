@@ -14,6 +14,7 @@ from PyQt6.QtGui import QColor, QShortcut, QKeySequence
 class SMTNavigator(QMainWindow):
     """50 физических позиций чипшутера: L5–L29 (25), затем R5–R29 (25)."""
     CS_BANK_SLOTS = [f"L{i}" for i in range(5, 30)] + [f"R{i}" for i in range(5, 30)]
+    DEFAULT_TAPE_WIDTH = 8
 
     def __init__(self):
         super().__init__()
@@ -79,15 +80,15 @@ class SMTNavigator(QMainWindow):
         self.btn_run.setStyleSheet("background-color: #2E7D32; color: white;")
         self.btn_run.clicked.connect(self.calculate_global)
 
-        self.btn_opt = QPushButton("➡️ СЛЕДУЮЩИЙ ЗАХОД")
-        self.btn_opt.setFixedHeight(35)
-        self.btn_opt.setStyleSheet("background-color: #1976D2; color: white;")
-        self.btn_opt.clicked.connect(self.optimize_stations)
+        self.btn_next_batch = QPushButton("➡️ СЛЕДУЮЩИЙ ЗАХОД")
+        self.btn_next_batch.setFixedHeight(35)
+        self.btn_next_batch.setStyleSheet("background-color: #1976D2; color: white;")
+        self.btn_next_batch.clicked.connect(self.next_batch)
 
         file_run_lay.addWidget(self.btn_load, stretch=1)
         file_run_lay.addWidget(self.status_label, stretch=3)
         file_run_lay.addWidget(self.btn_run, stretch=1)
-        file_run_lay.addWidget(self.btn_opt, stretch=1)
+        file_run_lay.addWidget(self.btn_next_batch, stretch=1)
         top_layout.addLayout(file_run_lay)
 
         # Конфигурация фидеров (ленты)
@@ -297,7 +298,7 @@ class SMTNavigator(QMainWindow):
         self.wh_input_qty.setPrefix("Шт: ")
         self.wh_input_width = QComboBox()
         self.wh_input_width.addItems([str(x) for x in self.tape_sizes])
-        self.wh_input_width.setCurrentText("8")
+        self.wh_input_width.setCurrentText(str(self.DEFAULT_TAPE_WIDTH))
 
         btn_add_wh = QPushButton("➕ ДОБАВИТЬ ВРУЧНУЮ")
         btn_add_wh.setStyleSheet("background-color: #2E7D32; color: white;")
@@ -354,7 +355,7 @@ class SMTNavigator(QMainWindow):
                 records.append({
                     "Номер": row.get("Номер", ""),
                     "Название": row.get("Название", ""),
-                    "ШиринаЛенты": 8,
+                    "ШиринаЛенты": self.DEFAULT_TAPE_WIDTH,
                     "Катушка": "1",
                     "Остаток": row.get("Количество", 0),
                 })
@@ -368,7 +369,7 @@ class SMTNavigator(QMainWindow):
             df["Название"] = df["Название"].astype(str).str.strip()
             df["Номер"] = df["Номер"].astype(str)
             df["Катушка"] = df["Катушка"].astype(str)
-            df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors="coerce").fillna(8).astype(int)
+            df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors="coerce").fillna(self.DEFAULT_TAPE_WIDTH).astype(int)
             df["Остаток"] = pd.to_numeric(df["Остаток"], errors="coerce").fillna(0).astype(int)
             df = df[df["Название"] != ""]
             df = df[df["Остаток"] > 0]
@@ -438,12 +439,12 @@ class SMTNavigator(QMainWindow):
                 elif len(df.columns) >= 3:
                     df = df.iloc[:, :3]
                     df.columns = ["Номер", "Название", "Остаток"]
-                    df["ШиринаЛенты"] = 8
+                    df["ШиринаЛенты"] = self.DEFAULT_TAPE_WIDTH
                 else:
                     self.wh_status_label.setText("Ошибка: в Excel должно быть минимум 3 колонки.")
                     return
                 df["Остаток"] = pd.to_numeric(df["Остаток"], errors='coerce').fillna(0).astype(int)
-                df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors='coerce').fillna(8).astype(int)
+                df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors='coerce').fillna(self.DEFAULT_TAPE_WIDTH).astype(int)
 
                 for _, row in df.iterrows():
                     self._upsert_warehouse(str(row['Номер']), str(row['Название']), int(row['ШиринаЛенты']), int(row['Остаток']))
@@ -473,8 +474,15 @@ class SMTNavigator(QMainWindow):
 
         df_sorted = self.warehouse_data.copy()
         df_sorted["Остаток"] = pd.to_numeric(df_sorted["Остаток"], errors="coerce").fillna(0).astype(int)
+        def _coil_num(value):
+            m = re.search(r"(\d+)$", str(value))
+            return int(m.group(1)) if m else 999999
+
+        df_sorted["__coil_num"] = df_sorted["Катушка"].map(_coil_num)
+        df_sorted["__coil_txt"] = df_sorted["Катушка"].astype(str)
         df_sorted = df_sorted[df_sorted["Остаток"] > 0]
-        df_sorted = df_sorted.sort_values(by=["Название", "Номер", "Катушка"], na_position='last')
+        df_sorted = df_sorted.sort_values(by=["Название", "Номер", "__coil_num", "__coil_txt"], na_position='last')
+        df_sorted = df_sorted.drop(columns=["__coil_num", "__coil_txt"])
 
         self.warehouse_table.setRowCount(len(df_sorted))
         for i, (_, row) in enumerate(df_sorted.iterrows()):
@@ -557,7 +565,7 @@ class SMTNavigator(QMainWindow):
         if qty_to_add > 0:
             comp_rows = self.warehouse_data[self.warehouse_data["Название"] == comp_name]
             if comp_rows.empty:
-                self._upsert_warehouse("", comp_name, 8, int(qty_to_add))
+                self._upsert_warehouse("", comp_name, self.DEFAULT_TAPE_WIDTH, int(qty_to_add))
             else:
                 idx = comp_rows.index[0]
                 self.warehouse_data.at[idx, "Остаток"] = int(self.warehouse_data.at[idx, "Остаток"]) + int(qty_to_add)
@@ -655,7 +663,7 @@ class SMTNavigator(QMainWindow):
         """Смена платы: пересчёт таблиц без перерисовки визуальной карты и БЕЗ автоматической перезаписи слотов."""
         self.render_board_data(rebuild_visual=False, auto_assign=False)
 
-    def optimize_stations(self):
+    def next_batch(self):
         """
         Автоматически выбирает следующую плату по наибольшему совпадению компонентов,
         удаляет ненужные компоненты со станков и рассчитывает очереди для новой платы.
@@ -737,7 +745,13 @@ class SMTNavigator(QMainWindow):
         if not board:
             return
         board_key = str(board)
-        loaded = [int(x) for x in self.batch_stock_deducted.get(board_key, []) if str(x).isdigit()]
+        loaded = []
+        for x in self.batch_stock_deducted.get(board_key, []):
+            try:
+                loaded.append(int(x))
+            except (TypeError, ValueError):
+                print(f"Некорректный номер батча в batch_stock_deducted[{board_key}]: {x}")
+                continue
         if batch_no in loaded:
             return
 
@@ -817,7 +831,7 @@ class SMTNavigator(QMainWindow):
 
         def parse_w(x):
             m = re.search(r'(\d+)', str(x))
-            w = int(m.group(1)) if m else 8
+            w = int(m.group(1)) if m else self.DEFAULT_TAPE_WIDTH
             return next((s for s in self.tape_sizes if w <= s), 44)
 
         # Вытягиваем глобальную информацию о ширине ленты для всех компонентов проекта
