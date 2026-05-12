@@ -28,16 +28,17 @@ class SMTNavigator(QMainWindow):
             os.path.dirname(os.path.abspath(__file__)),
             "smt_progress.json",
         )
+        self.warehouse_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "warehouse.json",
+        )
 
         progress_data = self.load_progress()
         self.setup_completed = progress_data.get('setup', {})
         self.instr_completed = progress_data.get('instr', {})
         self.global_feeder_map = progress_data.get('global_feeder_map') or {}
-        wh_data = progress_data.get('warehouse', [])
-        if wh_data:
-            self.warehouse_data = pd.DataFrame(wh_data)
-        else:
-            self.warehouse_data = pd.DataFrame(columns=["Номер", "Название", "Количество"])
+        self.batch_stock_deducted = progress_data.get('batch_stock_deducted', {})
+        self.warehouse_data = self.load_warehouse_data(progress_data.get('warehouse', []))
         self.batch_comps = {}
 
         # Горячие клавиши (Enter)
@@ -78,7 +79,7 @@ class SMTNavigator(QMainWindow):
         self.btn_run.setStyleSheet("background-color: #2E7D32; color: white;")
         self.btn_run.clicked.connect(self.calculate_global)
 
-        self.btn_opt = QPushButton(" ОПТИМИЗИРОВАТЬ СТАНКИ")
+        self.btn_opt = QPushButton("➡️ СЛЕДУЮЩИЙ ЗАХОД")
         self.btn_opt.setFixedHeight(35)
         self.btn_opt.setStyleSheet("background-color: #1976D2; color: white;")
         self.btn_opt.clicked.connect(self.optimize_stations)
@@ -294,6 +295,9 @@ class SMTNavigator(QMainWindow):
         self.wh_input_qty = QSpinBox()
         self.wh_input_qty.setRange(0, 999999)
         self.wh_input_qty.setPrefix("Шт: ")
+        self.wh_input_width = QComboBox()
+        self.wh_input_width.addItems([str(x) for x in self.tape_sizes])
+        self.wh_input_width.setCurrentText("8")
 
         btn_add_wh = QPushButton("➕ ДОБАВИТЬ ВРУЧНУЮ")
         btn_add_wh.setStyleSheet("background-color: #2E7D32; color: white;")
@@ -301,6 +305,7 @@ class SMTNavigator(QMainWindow):
 
         ctrl_layout.addWidget(self.wh_input_num)
         ctrl_layout.addWidget(self.wh_input_name)
+        ctrl_layout.addWidget(self.wh_input_width)
         ctrl_layout.addWidget(self.wh_input_qty)
         ctrl_layout.addWidget(btn_add_wh)
 
@@ -325,8 +330,8 @@ class SMTNavigator(QMainWindow):
         list_group = QGroupBox("СПИСОК СКЛАДА")
         list_lay = QVBoxLayout(list_group)
         self.warehouse_table = QTableWidget()
-        self.warehouse_table.setColumnCount(3)
-        self.warehouse_table.setHorizontalHeaderLabels(["НОМЕР ПОЗИЦИИ", "НАЗВАНИЕ", "ОСТАТОК"])
+        self.warehouse_table.setColumnCount(5)
+        self.warehouse_table.setHorizontalHeaderLabels(["НОМЕР ПОЗИЦИИ", "НАЗВАНИЕ", "ШИРИНА ЛЕНТЫ", "КАТУШКА", "ОСТАТОК"])
         self.warehouse_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.warehouse_table.setStyleSheet("background-color: #222; color: white;")
         list_lay.addWidget(self.warehouse_table)
@@ -334,31 +339,88 @@ class SMTNavigator(QMainWindow):
 
         self.render_warehouse_map()
 
-    def _upsert_warehouse(self, num, name, qty):
-        if self.warehouse_data.empty:
-            idx = []
-        else:
-            idx = self.warehouse_data.index[self.warehouse_data['Название'] == name].tolist()
+    def load_warehouse_data(self, legacy_records=None):
+        cols = ["Номер", "Название", "ШиринаЛенты", "Катушка", "Остаток"]
+        records = []
 
-        if idx:
-            self.warehouse_data.at[idx[0], 'Количество'] += qty
-            if num:
-                self.warehouse_data.at[idx[0], 'Номер'] = num
+        if os.path.exists(self.warehouse_file):
+            try:
+                with open(self.warehouse_file, "r", encoding="utf-8") as f:
+                    records = json.load(f) or []
+            except Exception:
+                records = []
+        elif legacy_records:
+            for row in legacy_records:
+                records.append({
+                    "Номер": row.get("Номер", ""),
+                    "Название": row.get("Название", ""),
+                    "ШиринаЛенты": 8,
+                    "Катушка": "1",
+                    "Остаток": row.get("Количество", 0),
+                })
+
+        df = pd.DataFrame(records)
+        for c in cols:
+            if c not in df.columns:
+                df[c] = "" if c in ("Номер", "Название", "Катушка") else 0
+        df = df[cols]
+        if not df.empty:
+            df["Название"] = df["Название"].astype(str).str.strip()
+            df["Номер"] = df["Номер"].astype(str)
+            df["Катушка"] = df["Катушка"].astype(str)
+            df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors="coerce").fillna(8).astype(int)
+            df["Остаток"] = pd.to_numeric(df["Остаток"], errors="coerce").fillna(0).astype(int)
+            df = df[df["Название"] != ""]
+            df = df[df["Остаток"] > 0]
+            df = df.reset_index(drop=True)
         else:
-            new_row = pd.DataFrame([{"Номер": num, "Название": name, "Количество": qty}])
-            self.warehouse_data = pd.concat([self.warehouse_data, new_row], ignore_index=True)
+            df = pd.DataFrame(columns=cols)
+
+        if not os.path.exists(self.warehouse_file):
+            self.warehouse_data = df
+            self.save_warehouse_data()
+        return df
+
+    def save_warehouse_data(self):
+        try:
+            records = []
+            if getattr(self, "warehouse_data", None) is not None and not self.warehouse_data.empty:
+                clean = self.warehouse_data.copy()
+                clean["Остаток"] = pd.to_numeric(clean["Остаток"], errors="coerce").fillna(0).astype(int)
+                clean = clean[clean["Остаток"] > 0]
+                records = clean.to_dict("records")
+            with open(self.warehouse_file, "w", encoding="utf-8") as f:
+                json.dump(records, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print("Ошибка сохранения склада:", e)
+
+    def _upsert_warehouse(self, num, name, width, qty):
+        if qty <= 0:
+            return
+        same = self.warehouse_data[self.warehouse_data["Название"] == name] if not self.warehouse_data.empty else pd.DataFrame()
+        next_idx = len(same) + 1
+        coil_id = f"{name}-{next_idx}"
+        new_row = pd.DataFrame([{
+            "Номер": num,
+            "Название": name,
+            "ШиринаЛенты": int(width),
+            "Катушка": coil_id,
+            "Остаток": int(qty),
+        }])
+        self.warehouse_data = pd.concat([self.warehouse_data, new_row], ignore_index=True)
 
     def add_manual_warehouse_item(self):
         num = self.wh_input_num.text().strip()
         name = self.wh_input_name.text().strip()
         qty = self.wh_input_qty.value()
+        width = int(self.wh_input_width.currentText())
 
         if not name:
             self.wh_status_label.setText("Ошибка: Название не может быть пустым.")
             return
 
-        self._upsert_warehouse(num, name, qty)
-        self.save_progress()
+        self._upsert_warehouse(num, name, width, qty)
+        self.save_warehouse_data()
         self.wh_input_num.clear()
         self.wh_input_name.clear()
         self.wh_input_qty.setValue(0)
@@ -370,19 +432,24 @@ class SMTNavigator(QMainWindow):
         if fn:
             try:
                 df = pd.read_excel(fn)
-                if len(df.columns) >= 3:
+                if len(df.columns) >= 4:
+                    df = df.iloc[:, :4]
+                    df.columns = ["Номер", "Название", "ШиринаЛенты", "Остаток"]
+                elif len(df.columns) >= 3:
                     df = df.iloc[:, :3]
-                    df.columns = ["Номер", "Название", "Количество"]
+                    df.columns = ["Номер", "Название", "Остаток"]
+                    df["ШиринаЛенты"] = 8
                 else:
                     self.wh_status_label.setText("Ошибка: в Excel должно быть минимум 3 колонки.")
                     return
-                df["Количество"] = pd.to_numeric(df["Количество"], errors='coerce').fillna(0).astype(int)
+                df["Остаток"] = pd.to_numeric(df["Остаток"], errors='coerce').fillna(0).astype(int)
+                df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors='coerce').fillna(8).astype(int)
 
                 for _, row in df.iterrows():
-                    self._upsert_warehouse(str(row['Номер']), str(row['Название']), int(row['Количество']))
+                    self._upsert_warehouse(str(row['Номер']), str(row['Название']), int(row['ШиринаЛенты']), int(row['Остаток']))
 
                 self.wh_status_label.setText(f"Excel загружен. Позиций: {len(self.warehouse_data)}")
-                self.save_progress()
+                self.save_warehouse_data()
                 self.render_warehouse_map()
             except Exception as e:
                 self.wh_status_label.setText(f"Ошибка загрузки: {e}")
@@ -404,57 +471,101 @@ class SMTNavigator(QMainWindow):
         if self.warehouse_data.empty:
             return
 
-        # Сортировка по номеру
-        df_sorted = self.warehouse_data.sort_values(by="Номер", na_position='last')
+        df_sorted = self.warehouse_data.copy()
+        df_sorted["Остаток"] = pd.to_numeric(df_sorted["Остаток"], errors="coerce").fillna(0).astype(int)
+        df_sorted = df_sorted[df_sorted["Остаток"] > 0]
+        df_sorted = df_sorted.sort_values(by=["Название", "Номер", "Катушка"], na_position='last')
 
         self.warehouse_table.setRowCount(len(df_sorted))
         for i, (_, row) in enumerate(df_sorted.iterrows()):
             self.warehouse_table.setItem(i, 0, QTableWidgetItem(str(row['Номер'])))
             self.warehouse_table.setItem(i, 1, QTableWidgetItem(str(row['Название'])))
-            qty_item = QTableWidgetItem(str(row['Количество']))
-            if row['Количество'] <= 0:
+            self.warehouse_table.setItem(i, 2, QTableWidgetItem(f"{int(row['ШиринаЛенты'])}мм"))
+            self.warehouse_table.setItem(i, 3, QTableWidgetItem(str(row['Катушка'])))
+            qty_item = QTableWidgetItem(str(row['Остаток']))
+            if row['Остаток'] <= 0:
                 qty_item.setForeground(QColor("#FF5252"))
             else:
                 qty_item.setForeground(QColor("#4CAF50"))
-            self.warehouse_table.setItem(i, 2, qty_item)
+            self.warehouse_table.setItem(i, 4, qty_item)
 
-        row_layouts = [QHBoxLayout() for _ in range(6)]
+        row_layouts = [QHBoxLayout() for _ in range(4)]
         for layout in row_layouts:
             self.warehouse_layout.addLayout(layout)
 
-        for i, (_, row) in enumerate(df_sorted.iterrows()):
+        grouped = df_sorted.groupby(["Номер", "Название", "ШиринаЛенты"], dropna=False)
+        for i, ((num, name, width), grp) in enumerate(grouped):
             w = QWidget()
             w.setStyleSheet("background-color: #333; border: 1px solid #555; margin: 2px; border-radius: 4px;")
             l = QVBoxLayout(w)
             l.setContentsMargins(5, 5, 5, 5)
 
-            lbl_num = QLabel(f"Поз: {row['Номер']}")
+            lbl_num = QLabel(f"Поз: {num}")
             lbl_num.setStyleSheet("color: #AAA; border: none; font-size: 11px;")
 
-            lbl_name = QLabel(f"<b>{row['Название']}</b>")
+            lbl_name = QLabel(f"<b>{name}</b> ({int(width)}мм)")
             lbl_name.setStyleSheet("color: #90CAF9; border: none;")
             lbl_name.setWordWrap(True)
 
-            lbl_qty = QLabel(f"Остаток: {row['Количество']}")
-            lbl_qty.setStyleSheet("color: #FF5252; border: none;" if row['Количество'] <= 0 else "color: #4CAF50; border: none;")
+            coils = [f"{c}: {int(q)}" for c, q in zip(grp["Катушка"], grp["Остаток"])]
+            total_qty = int(pd.to_numeric(grp["Остаток"], errors="coerce").fillna(0).sum())
+            lbl_coils = QLabel(f"Катушек: {len(grp)} | {'; '.join(coils)}")
+            lbl_coils.setWordWrap(True)
+            lbl_coils.setStyleSheet("color: #DDD; border: none;")
+
+            lbl_qty = QLabel(f"Итого: {total_qty}")
+            lbl_qty.setStyleSheet("color: #FF5252; border: none;" if total_qty <= 0 else "color: #4CAF50; border: none;")
 
             l.addWidget(lbl_num)
             l.addWidget(lbl_name)
+            l.addWidget(lbl_coils)
             l.addWidget(lbl_qty)
 
-            # Распределение по 6 рядам
-            row_layouts[i % 6].addWidget(w)
+            row_layouts[i % len(row_layouts)].addWidget(w)
 
         for layout in row_layouts:
             layout.addStretch()
 
-    def update_warehouse_qty(self, comp_name, qty_to_subtract=0, qty_to_add=0):
-        if self.warehouse_data.empty: return
-        idx = self.warehouse_data.index[self.warehouse_data['Название'] == comp_name]
-        if not idx.empty:
-            self.warehouse_data.at[idx[0], 'Количество'] = self.warehouse_data.at[idx[0], 'Количество'] - qty_to_subtract + qty_to_add
-            self.render_warehouse_map()
-            self.save_progress()
+    def _consume_from_first_coil(self, comp_name, qty_to_subtract):
+        if qty_to_subtract <= 0:
+            return 0
+        if self.warehouse_data.empty:
+            return qty_to_subtract
+
+        comp_rows = self.warehouse_data[self.warehouse_data["Название"] == comp_name]
+        if comp_rows.empty:
+            return qty_to_subtract
+
+        first_idx = comp_rows.index[0]
+        current_qty = int(self.warehouse_data.at[first_idx, "Остаток"])
+        consume = min(current_qty, int(qty_to_subtract))
+        self.warehouse_data.at[first_idx, "Остаток"] = current_qty - consume
+        left = int(qty_to_subtract) - consume
+        self.warehouse_data = self.warehouse_data[self.warehouse_data["Остаток"] > 0].reset_index(drop=True)
+        return left
+
+    def update_warehouse_qty(self, comp_name, qty_to_subtract=0, qty_to_add=0, show_messages=True):
+        if self.warehouse_data.empty and qty_to_add <= 0:
+            return
+
+        warning_msg = None
+        if qty_to_subtract > 0:
+            left = self._consume_from_first_coil(comp_name, int(qty_to_subtract))
+            if left > 0:
+                warning_msg = f"{comp_name}: катушка закончилась, осталось списать {left} шт. Перезагрузите катушку и повторите заход."
+
+        if qty_to_add > 0:
+            comp_rows = self.warehouse_data[self.warehouse_data["Название"] == comp_name]
+            if comp_rows.empty:
+                self._upsert_warehouse("", comp_name, 8, int(qty_to_add))
+            else:
+                idx = comp_rows.index[0]
+                self.warehouse_data.at[idx, "Остаток"] = int(self.warehouse_data.at[idx, "Остаток"]) + int(qty_to_add)
+
+        self.save_warehouse_data()
+        self.render_warehouse_map()
+        if warning_msg and show_messages:
+            QMessageBox.warning(self, "Склад", warning_msg)
 
     def _on_setup_selection_changed(self):
         """Выбор строк в «Карте заправки» — обновить визуальную карту (предпросмотр в слотах)."""
@@ -499,6 +610,7 @@ class SMTNavigator(QMainWindow):
             xls = pd.ExcelFile(fn)
             self.all_data = pd.concat([pd.read_excel(xls, s).assign(Sheet=s) for s in xls.sheet_names])
             self.all_data.columns = self.all_data.columns.str.strip()
+            self.batch_stock_deducted = {}
             self.board_sel.clear()
             self.board_sel.addItems(xls.sheet_names)
             self.update_board_combobox()
@@ -534,6 +646,10 @@ class SMTNavigator(QMainWindow):
         # НЕ пересчитываем расстановку сразу для текущей платы при переключении,
         # только если она пустая.
         self.render_board_data(rebuild_visual=True, auto_assign=True)
+        board = self.board_sel.currentText()
+        if board:
+            self._autoload_batch_for_board(board, batch_no=1)
+            self.render_board_data(rebuild_visual=True, auto_assign=False)
 
     def _on_board_changed(self, _index=None):
         """Смена платы: пересчёт таблиц без перерисовки визуальной карты и БЕЗ автоматической перезаписи слотов."""
@@ -587,19 +703,12 @@ class SMTNavigator(QMainWindow):
         for comps in self.setup_completed.values():
             global_setup.update(comps)
 
-        future_needed = set()
-        for b_name in self.all_data['Sheet'].unique():
-            if b_name != board and not self.is_board_completed(b_name):
-                future_needed.update(self.all_data[self.all_data['Sheet'] == b_name]['Name'].unique())
-
-        curr_needed_active = set()
-        curr_all = set(self.all_data[self.all_data['Sheet'] == board]['Name'].unique())
-        curr_done = set(self.instr_completed.get(board, []))
-        curr_needed_active = curr_all - curr_done
-
+        next_all = set(self.all_data[self.all_data['Sheet'] == board]['Name'].unique())
+        next_done = set(self.instr_completed.get(board, []))
+        next_needed_active = next_all - next_done
         items_to_remove = []
         for comp in global_setup:
-            if comp not in curr_needed_active and comp not in future_needed:
+            if comp not in next_needed_active:
                 items_to_remove.append(comp)
 
         # Снимаем коричневые компоненты
@@ -611,7 +720,72 @@ class SMTNavigator(QMainWindow):
         self.table_setup.clearSelection()
         self.save_progress()
         self.render_board_data(rebuild_visual=True, auto_assign=True)
+        self._autoload_batch_for_board(board, batch_no=1)
+        self.render_board_data(rebuild_visual=True, auto_assign=False)
         QMessageBox.information(self, "Оптимизация", f"Успешный переход на плату: {board}\nУдалено ненужных деталей: {len(items_to_remove)}. Батчи пересчитаны.")
+
+    def _board_qty_map(self, board):
+        if self.all_data is None or not board:
+            return {}
+        current_board_data = self.all_data[self.all_data['Sheet'] == board]
+        if current_board_data.empty:
+            return {}
+        agg = current_board_data.groupby('Name').agg({'Quantity': 'sum'}).reset_index()
+        return {str(r['Name']): int(r['Quantity']) for _, r in agg.iterrows()}
+
+    def _autoload_batch_for_board(self, board, batch_no=1):
+        if not board:
+            return
+        board_key = str(board)
+        loaded = [int(x) for x in self.batch_stock_deducted.get(board_key, []) if str(x).isdigit()]
+        if batch_no in loaded:
+            return
+
+        qty_map = self._board_qty_map(board_key)
+        board_components = set(qty_map.keys())
+        if not board_components:
+            return
+
+        if board_key not in self.setup_completed:
+            self.setup_completed[board_key] = []
+
+        global_setup = set()
+        for comps in self.setup_completed.values():
+            global_setup.update(comps)
+
+        to_load = []
+        for name in board_components:
+            info = self.feeder_map.get(name)
+            if not info:
+                continue
+            try:
+                b = int(info.get('batch', 1))
+            except (TypeError, ValueError):
+                b = 1
+            if b == batch_no:
+                to_load.append(name)
+
+        for name in to_load:
+            if name not in global_setup and name not in self.setup_completed[board_key]:
+                self.setup_completed[board_key].append(name)
+                global_setup.add(name)
+
+        shortages = []
+        for name in to_load:
+            qty = int(qty_map.get(name, 0))
+            if qty <= 0:
+                continue
+            left = self._consume_from_first_coil(name, qty)
+            if left > 0:
+                shortages.append(f"{name}: не хватило {left} шт.")
+
+        self.batch_stock_deducted.setdefault(board_key, [])
+        self.batch_stock_deducted[board_key].append(batch_no)
+        self.save_warehouse_data()
+        self.save_progress()
+        self.render_warehouse_map()
+        if shortages:
+            QMessageBox.warning(self, "Склад", "Часть компонентов требует перезагрузки катушки:\n" + "\n".join(shortages))
 
     def render_board_data(self, rebuild_visual=True, auto_assign=False):
         board = self.board_sel.currentText()
@@ -679,7 +853,11 @@ class SMTNavigator(QMainWindow):
                     if name in unique_parts_current:
                         board_feeder_map[name] = {'batch': 1, 'slot': info['slot'], 'station': 'ЧИПШУТЕР'}
 
-            cs_unplaced = [r['Name'] for _, r in cs_needed.sort_values(by='Name', key=lambda s: s.astype(str)).iterrows() if r['Name'] not in board_feeder_map]
+            cs_unplaced_df = cs_needed[~cs_needed['Name'].isin(board_feeder_map.keys())]
+            cs_unplaced_df = cs_unplaced_df.merge(board_counts, on='Name', how='left')
+            cs_unplaced_df['board_count'] = pd.to_numeric(cs_unplaced_df['board_count'], errors='coerce').fillna(0).astype(int)
+            cs_unplaced_df = cs_unplaced_df.sort_values(by=['board_count', 'Name'], ascending=[False, True])
+            cs_unplaced = cs_unplaced_df['Name'].tolist()
             used_cs_slots_in_batch = {}
 
             def assign_next_cs_slot(comp_name):
@@ -716,11 +894,6 @@ class SMTNavigator(QMainWindow):
                 self.global_feeder_map[name] = board_feeder_map[name]
 
             # Для Павука аналогично - блокируем занятые физически места
-            # Сортируем неразмещенные по частоте использования (по убыванию), затем по имени
-            cs_unplaced = cs_needed[~cs_needed['Name'].isin(board_feeder_map.keys())]
-            cs_unplaced = cs_unplaced.sort_values(by=['board_count', 'Name'], ascending=[False, True])
-            cs_unplaced_names = cs_unplaced['Name'].tolist()
-
             locked_pv_slots = set()
             for name in global_setup:
                 info = self.global_feeder_map.get(name)
@@ -736,6 +909,8 @@ class SMTNavigator(QMainWindow):
                         board_feeder_map[name] = {'batch': 1, 'slot': info['slot'], 'station': 'ПАВУК'}
 
             pv_unplaced = pv_needed[~pv_needed['Name'].isin(board_feeder_map.keys())]
+            pv_unplaced = pv_unplaced.merge(board_counts, on='Name', how='left')
+            pv_unplaced['board_count'] = pd.to_numeric(pv_unplaced['board_count'], errors='coerce').fillna(0).astype(int)
             pv_unplaced = pv_unplaced.sort_values(by=['board_count', 'Name'], ascending=[False, True])
 
             pv_limits = {s: self.spins[s].value() for s in self.tape_sizes}
@@ -1194,25 +1369,12 @@ class SMTNavigator(QMainWindow):
             c = table.item(r, name_col).text() if table.item(r, name_col) else ""
             if not c: continue
 
-            qty = 0
-            if fw == self.table_instr:
-                qty_item = table.item(r, 3) # Колонка 'КОЛ-ВО'
-                if qty_item:
-                    try:
-                        qty = int(qty_item.text())
-                    except:
-                        pass
-
             if all_done:
                 if c in target_dict[board]:
                     target_dict[board].remove(c)
-                    if fw == self.table_instr and hasattr(self, 'update_warehouse_qty'):
-                        self.update_warehouse_qty(c, qty_to_add=qty)
             else:
                 if c not in target_dict[board]:
                     target_dict[board].append(c)
-                    if fw == self.table_instr and hasattr(self, 'update_warehouse_qty'):
-                        self.update_warehouse_qty(c, qty_to_subtract=qty)
 
         self.save_progress()
 
@@ -1283,11 +1445,11 @@ class SMTNavigator(QMainWindow):
                 with open(self.progress_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if 'setup' not in data:
-                        return {'setup': data, 'instr': {}}
+                        return {'setup': data, 'instr': {}, 'batch_stock_deducted': {}}
                     return data
             except Exception:
                 pass
-        return {'setup': {}, 'instr': {}}
+        return {'setup': {}, 'instr': {}, 'batch_stock_deducted': {}}
 
     def save_progress(self):
         tape_limits = {str(s): self.spins[s].value() for s in self.tape_sizes}
@@ -1295,16 +1457,12 @@ class SMTNavigator(QMainWindow):
         if feeder_map is None:
             feeder_map = {}
 
-        wh_records = []
-        if getattr(self, 'warehouse_data', None) is not None and not self.warehouse_data.empty:
-            wh_records = self.warehouse_data.to_dict('records')
-
         payload = {
             'setup': self.setup_completed,
             'instr': self.instr_completed,
             'global_feeder_map': feeder_map,
             'tape_limits': tape_limits,
-            'warehouse': wh_records
+            'batch_stock_deducted': self.batch_stock_deducted
         }
         try:
             with open(self.progress_file, "w", encoding="utf-8") as f:
@@ -1333,4 +1491,3 @@ if __name__ == "__main__":
     w = SMTNavigator()
     w.show()
     sys.exit(app.exec())
-
