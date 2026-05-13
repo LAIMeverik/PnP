@@ -15,7 +15,7 @@ from ui.visual_map import VisualMapMixin
 from ui.progress_panel import ProgressPanelMixin
 
 
-class SMTNavigator(VisualMapMixin, ProgressPanelMixin, WarehouseMixin, PnPLogicMixin, QMainWindow):
+class SMTNavigator(QMainWindow, VisualMapMixin, ProgressPanelMixin, WarehouseMixin, PnPLogicMixin):
     """50 физических позиций чипшутера: L5–L29 (25), затем R5–R29 (25)."""
     CS_BANK_SLOTS = [f"L{i}" for i in range(5, 30)] + [f"R{i}" for i in range(5, 30)]
     DEFAULT_TAPE_WIDTH = 8

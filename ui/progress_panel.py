@@ -1,7 +1,7 @@
 import re
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                              QProgressBar, QApplication, QLabel,
-                             QTableWidgetItem)
+                             QTableWidgetItem, QHeaderView)
 from PyQt6.QtGui import QColor
 
 
@@ -158,5 +158,4 @@ class ProgressPanelMixin:
                 if "ПАВУК" in val:
                     item.setForeground(QColor("#64B5F6"))
                 table.setItem(i, j, item)
-        from PyQt6.QtWidgets import QHeaderView
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
