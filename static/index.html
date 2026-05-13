@@ -1,98 +1,97 @@
-<!DOCTYPE html>
-<html lang="ru" data-theme="dark">
+<!doctype html>
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SMT Navigator Web</title>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet">
-    <style>
-        .glass-card { background: rgba(23, 23, 23, 0.8); backdrop-filter: blur(10px); border: 1px solid #333; }
-        .slot-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
-        .feeder-slot { transition: all 0.2s; border-left: 4px solid #444; }
-        .feeder-slot:hover { transform: translateY(-2px); border-left-color: #3b82f6; }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SMT Navigator Web</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #111; color: #eee; }
+    .wrap { padding: 16px; max-width: 1400px; margin: 0 auto; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .panel { border: 1px solid #2f2f2f; border-radius: 10px; background: #1a1a1a; padding: 12px; margin-top: 12px; }
+    .slot-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+    .slot { border-radius: 6px; padding: 8px; border: 1px solid #333; background: #222; font-size: 12px; min-height: 44px; cursor: pointer; }
+    .slot.active { background: #1b5e20; border-color: #4caf50; }
+    .slot.keep { background: #d84315; border-color: #ff7043; }
+    .slot.remove { background: #5d4037; border-color: #8d6e63; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #333; padding: 6px; }
+    th { background: #222; }
+    tr.done { background: #1b5e20; }
+    .ok { color: #4caf50; }
+    .warn { color: #ff7043; }
+    .err { color: #ff5252; }
+    button, select, input { background: #202020; color: #fff; border: 1px solid #444; border-radius: 6px; padding: 6px 8px; }
+    button { cursor: pointer; }
+    .progress-row { display: grid; grid-template-columns: 220px 1fr 70px; gap: 8px; align-items: center; margin-bottom: 6px; }
+  </style>
 </head>
-<body class="bg-[#0a0a0a] text-gray-100 font-sans">
-    <div id="app" class="min-h-screen flex flex-col">
-        <div class="navbar bg-base-900 border-b border-white/5 px-8">
-            <div class="flex-1">
-                <span class="text-xl font-black tracking-widest text-blue-500">SMT <span class="text-white">PRO</span></span>
-            </div>
-            <div class="flex-none gap-4">
-                <div class="badge badge-outline badge-success">Raspberry Pi Online</div>
-                <button @click="uploadBOM" class="btn btn-primary btn-sm rounded-full px-6">Загрузить BOM</button>
-            </div>
-        </div>
+<body>
+  <div class="wrap">
+    <h1>SMT Navigator Web</h1>
 
-        <div class="flex flex-1 overflow-hidden">
-            <div class="w-80 border-r border-white/5 p-6 space-y-6 overflow-y-auto">
-                <h2 class="text-xs uppercase font-bold text-gray-500 tracking-widest">Прогресс сборки</h2>
-                <div v-for="(count, batch) in batches" :key="batch" class="space-y-2">
-                    <div class="flex justify-between text-sm">
-                        <span>Заход {{ batch }}</span>
-                        <span class="text-blue-400">{{ count.done }}/{{ count.total }}</span>
-                    </div>
-                    <progress class="progress progress-primary w-full" :value="count.done" :max="count.total"></progress>
-                </div>
-            </div>
-
-            <main class="flex-1 p-8 overflow-y-auto bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/10 via-transparent to-transparent">
-                <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h1 class="text-4xl font-bold mb-2">{{ state.current_board || 'Ожидание BOM...' }}</h1>
-                        <p class="text-gray-400">Линия активна • 50 позиций Chipshooter</p>
-                    </div>
-                </div>
-
-                <div class="glass-card rounded-3xl p-8 shadow-2xl">
-                    <div class="flex items-center justify-between mb-6">
-                        <h3 class="font-bold text-lg flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></span>
-                            CHIPSHOOTER: L5 — R29
-                        </h3>
-                    </div>
-
-                    <div class="slot-grid">
-                        <div v-for="slot in slots" :key="slot.id"
-                             :class="['feeder-slot p-3 rounded-lg bg-white/5 cursor-pointer', slot.is_done ? 'border-l-success bg-success/10' : '']"
-                             @click="toggleSlot(slot)">
-                            <div class="text-[10px] font-black opacity-40 mb-1">{{ slot.id }}</div>
-                            <div class="text-xs font-bold truncate">{{ slot.component || '—' }}</div>
-                            <div v-if="slot.component" class="mt-2 text-[10px] text-blue-400 font-bold uppercase tracking-tighter">B: {{ slot.batch }}</div>
-                        </div>
-                    </div>
-                </div>
-            </main>
-        </div>
+    <div class="panel">
+      <div class="row">
+        <input id="bomFile" type="file" accept=".xlsx,.xls" />
+        <button id="uploadBomBtn">Загрузить BOM</button>
+        <button id="calcBtn">Рассчитать базу</button>
+        <button id="nextBtn">Следующий заход</button>
+        <label>Плата:</label>
+        <select id="boardSel"></select>
+      </div>
+      <div id="status" class="warn" style="margin-top:8px;"></div>
+      <div id="summary" style="margin-top:8px;"></div>
     </div>
 
-    <script>
-        const { createApp, ref, onMounted } = Vue;
-        createApp({
-            setup() {
-                const state = ref({});
-                const slots = ref([]);
-                const batches = ref({});
+    <div class="panel">
+      <h3>Лимиты павука (слоты по ширинам)</h3>
+      <div class="row" id="tapeLimits"></div>
+      <button id="saveLimitsBtn" style="margin-top:8px;">Сохранить лимиты</button>
+    </div>
 
-                const fetchState = async () => {
-                    const res = await fetch('/api/state');
-                    state.value = await res.json();
-                    // Генерация 50 слотов для визуала (L5-R29)
-                    slots.value = Array.from({length: 50}, (_, i) => ({
-                        id: i < 25 ? `L${i+5}` : `R${i-20}`,
-                        component: state.value.feeder_map[i]?.name || '',
-                        batch: state.value.feeder_map[i]?.batch || 1,
-                        is_done: false
-                    }));
-                };
+    <div class="panel">
+      <h3>Прогресс</h3>
+      <div id="progress"></div>
+    </div>
 
-                onMounted(fetchState);
+    <div class="panel">
+      <h3>Чипшутер L5-R29 (клик по слоту: снять деталь из станка)</h3>
+      <div id="chipGrid" class="slot-grid"></div>
+    </div>
 
-                return { state, slots, batches };
-            }
-        }).mount('#app')
-    </script>
+    <div class="panel">
+      <h3>Павук (установленные)</h3>
+      <table id="spiderTable"></table>
+    </div>
+
+    <div class="panel">
+      <h3>Карта заправки (двойной клик: отметить/снять в setup)</h3>
+      <table id="setupTable"></table>
+    </div>
+
+    <div class="panel">
+      <h3>Список установки (двойной клик: отметить/снять в instr)</h3>
+      <table id="instrTable"></table>
+    </div>
+
+    <div class="panel">
+      <h3>Склад</h3>
+      <div class="row">
+        <input id="whExcelFile" type="file" accept=".xlsx,.xls" />
+        <button id="uploadWhBtn">Загрузить склад из Excel</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <input id="whNum" placeholder="Номер" />
+        <input id="whName" placeholder="Название" />
+        <input id="whWidth" type="number" value="8" min="8" />
+        <input id="whQty" type="number" value="0" min="0" />
+        <button id="addWhBtn">Добавить вручную</button>
+      </div>
+      <table id="warehouseTable" style="margin-top:8px;"></table>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>
