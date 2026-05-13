@@ -42,12 +42,15 @@ function render() {
     <div>Всего компонентов: <b>${d.summary?.total_parts ?? 0}</b> | Уникальных: <b>${d.summary?.unique_parts ?? 0}</b></div>
     <div>${d.summary?.feeders_used || ''}</div>
     <div>Рекомендованная следующая плата: <b>${d.summary?.next_board || 'нет'}</b></div>
+    <div>Плат в панели: <b>${d.board_multiplier || d.summary?.board_multiplier || 1}</b> | К снятию перед текущим заходом: <b>${d.summary?.pending_remove ?? 0}</b></div>
   `;
 
   const boardSel = document.getElementById('boardSel');
   const selected = boardSel.value || d.current_board;
   boardSel.innerHTML = (d.boards || []).map(b => `<option value="${b}">${b}</option>`).join('');
   boardSel.value = d.current_board || selected || '';
+  document.getElementById('boardMultiplier').value = String(d.board_multiplier || 1);
+  document.getElementById('chipFeederLimit').value = String(d.chip_feeder_limit || 50);
 
   const limits = document.getElementById('tapeLimits');
   limits.innerHTML = Object.entries(d.tape_limits || {}).map(([k, v]) => (
@@ -63,13 +66,27 @@ function render() {
     </div>
   `).join('') || 'Нет данных';
 
-  const chipGrid = document.getElementById('chipGrid');
-  chipGrid.innerHTML = (d.visual?.chipshooter || []).map(s => `
-    <div class="slot ${s.status}" data-remove="${(s.component || '').replace(/"/g, '&quot;')}">
-      <div><b>${s.slot}</b></div>
+  const center = document.getElementById('machineCenter');
+  center.innerHTML = `
+    <div>
+      <div style="font-size:20px; margin-bottom:8px;">РАБОЧАЯ ЗОНА</div>
+      <div>Текущая плата: ${d.current_board || '-'}</div>
+      <div style="margin-top:6px;">Следующий заход: ${d.summary?.next_board || 'нет'}</div>
+      <div style="margin-top:6px;">Красный — снять перед следующим заходом</div>
+    </div>
+  `;
+
+  const slots = d.visual?.chipshooter || [];
+  const left = slots.filter(s => String(s.slot).startsWith('L'));
+  const right = slots.filter(s => String(s.slot).startsWith('R'));
+  const slotHtml = s => `
+    <div class="slot ${s.status || ''} ${s.enabled === false ? 'disabled' : ''}" data-remove="${(s.component || '').replace(/"/g, '&quot;')}">
+      <div><b>${s.slot}</b>${s.enabled === false ? ' <span style="opacity:.7">(вне лимита)</span>' : ''}</div>
       <div>${s.component || '—'}</div>
     </div>
-  `).join('');
+  `;
+  document.getElementById('chipLeft').innerHTML = left.map(slotHtml).join('');
+  document.getElementById('chipRight').innerHTML = right.map(slotHtml).join('');
 
   const spider = d.visual?.spider || [];
   const spiderTable = document.getElementById('spiderTable');
@@ -152,13 +169,16 @@ document.getElementById('instrTable').ondblclick = async (e) => {
   await withRefresh(() => api('/api/toggle-instr', 'POST', { components: [tr.dataset.name] }));
 };
 
-document.getElementById('chipGrid').onclick = async (e) => {
+const chipClick = async (e) => {
   const slot = e.target.closest('.slot');
   if (!slot) return;
+  if (slot.classList.contains('disabled')) return;
   const comp = slot.dataset.remove || '';
   if (!comp) return;
   await withRefresh(() => api('/api/remove-component', 'POST', { component: comp }));
 };
+document.getElementById('chipLeft').onclick = chipClick;
+document.getElementById('chipRight').onclick = chipClick;
 
 document.getElementById('uploadWhBtn').onclick = async () => {
   const f = document.getElementById('whExcelFile').files[0];
@@ -174,6 +194,16 @@ document.getElementById('addWhBtn').onclick = async () => {
   const width = Number(document.getElementById('whWidth').value || 8);
   const qty = Number(document.getElementById('whQty').value || 0);
   await withRefresh(() => api('/api/warehouse/manual', 'POST', { num, name, width, qty }));
+};
+
+document.getElementById('saveBoardMultiplierBtn').onclick = async () => {
+  const multiplier = Number(document.getElementById('boardMultiplier').value || 1);
+  await withRefresh(() => api('/api/board-multiplier', 'POST', { multiplier }));
+};
+
+document.getElementById('saveChipFeederLimitBtn').onclick = async () => {
+  const limit = Number(document.getElementById('chipFeederLimit').value || 1);
+  await withRefresh(() => api('/api/feeders-limit', 'POST', { limit }));
 };
 
 refresh().catch(err => alert(err.message || String(err)));
