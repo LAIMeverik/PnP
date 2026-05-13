@@ -1,6 +1,7 @@
 import io
 import json
 import re
+import sqlite3
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional
@@ -24,6 +25,7 @@ class SMTService:
 
         self.progress_file = self.root_dir / "smt_progress.json"
         self.warehouse_file = self.root_dir / "warehouse.json"
+        self.warehouse_db_file = self.root_dir / "warehouse.db"
         self.bom_file = self.data_dir / "last_bom.xlsx"
         self._lock = RLock()
 
@@ -36,6 +38,9 @@ class SMTService:
         self.instr_completed: Dict[str, List[str]] = {}
         self.batch_stock_deducted: Dict[str, List[int]] = {}
         self.batch_comps: Dict[str, List[str]] = {}
+        self.pending_remove_components: List[str] = []
+        self.chip_feeder_limit: int = len(self.CS_BANK_SLOTS)
+        self.board_multiplier: int = 1
         self.tape_limits: Dict[int, int] = {8: 0, 12: 10, 16: 10, 24: 10, 32: 10, 44: 10}
         self.summary: Dict[str, Any] = {
             "status": "Ожидание загрузки BOM",
@@ -45,9 +50,12 @@ class SMTService:
             "next_board": "",
             "recharge_warning": "",
             "shortages": [],
+            "board_multiplier": 1,
+            "pending_remove": 0,
         }
         self.table_setup: List[Dict[str, Any]] = []
         self.table_instr: List[Dict[str, Any]] = []
+        self._init_warehouse_db()
         self.warehouse_data = self._load_warehouse_data([])
 
         progress_data = self._load_progress()
@@ -58,6 +66,16 @@ class SMTService:
             str(k): [int(x) for x in v if isinstance(x, (int, str)) and str(x).isdigit()]
             for k, v in (progress_data.get("batch_stock_deducted", {}) or {}).items()
         }
+        saved_chip_limit = progress_data.get("chip_feeder_limit", len(self.CS_BANK_SLOTS))
+        try:
+            self.chip_feeder_limit = max(1, min(len(self.CS_BANK_SLOTS), int(saved_chip_limit)))
+        except (TypeError, ValueError):
+            self.chip_feeder_limit = len(self.CS_BANK_SLOTS)
+        saved_board_multiplier = progress_data.get("board_multiplier", 1)
+        try:
+            self.board_multiplier = max(1, int(saved_board_multiplier))
+        except (TypeError, ValueError):
+            self.board_multiplier = 1
         saved_tape_limits = progress_data.get("tape_limits", {}) or {}
         for size in self.tape_sizes:
             val = saved_tape_limits.get(str(size), self.tape_limits[size])
@@ -102,6 +120,8 @@ class SMTService:
             "tape_limits": {str(k): int(v) for k, v in self.tape_limits.items()},
             "batch_stock_deducted": self.batch_stock_deducted,
             "current_board": self.current_board,
+            "chip_feeder_limit": int(self.chip_feeder_limit),
+            "board_multiplier": int(self.board_multiplier),
         }
         self.progress_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -116,17 +136,39 @@ class SMTService:
         except Exception:
             return {"setup": {}, "instr": {}, "batch_stock_deducted": {}}
 
-    def _load_warehouse_data(self, legacy_records: Optional[List[Dict[str, Any]]] = None) -> pd.DataFrame:
+    def _init_warehouse_db(self):
+        with sqlite3.connect(self.warehouse_db_file) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS warehouse (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    number TEXT NOT NULL DEFAULT '',
+                    name TEXT NOT NULL,
+                    tape_width INTEGER NOT NULL,
+                    coil TEXT NOT NULL,
+                    qty INTEGER NOT NULL
+                )
+                """
+            )
+            conn.commit()
+
+    def _load_warehouse_data(self, legacy_records: Optional[List[Dict[str, Any]] = None) -> pd.DataFrame:
         cols = ["Номер", "Название", "ШиринаЛенты", "Катушка", "Остаток"]
-        records: List[Dict[str, Any]] = []
-        if self.warehouse_file.exists():
+        with sqlite3.connect(self.warehouse_db_file) as conn:
+            db_df = pd.read_sql_query(
+                "SELECT number as 'Номер', name as 'Название', tape_width as 'ШиринаЛенты', coil as 'Катушка', qty as 'Остаток' FROM warehouse",
+                conn,
+            )
+        if db_df.empty and self.warehouse_file.exists():
             try:
                 records = json.loads(self.warehouse_file.read_text(encoding="utf-8")) or []
+                db_df = pd.DataFrame(records)
             except Exception:
-                records = []
-        elif legacy_records:
+                db_df = pd.DataFrame()
+        elif db_df.empty and legacy_records:
+            migrated = []
             for row in legacy_records:
-                records.append(
+                migrated.append(
                     {
                         "Номер": row.get("Номер", ""),
                         "Название": row.get("Название", ""),
@@ -135,8 +177,9 @@ class SMTService:
                         "Остаток": row.get("Количество", 0),
                     }
                 )
+            db_df = pd.DataFrame(migrated)
 
-        df = pd.DataFrame(records)
+        df = db_df.copy()
         for c in cols:
             if c not in df.columns:
                 df[c] = "" if c in ("Номер", "Название", "Катушка") else 0
@@ -150,16 +193,44 @@ class SMTService:
         df["ШиринаЛенты"] = pd.to_numeric(df["ШиринаЛенты"], errors="coerce").fillna(self.DEFAULT_TAPE_WIDTH).astype(int)
         df["Остаток"] = pd.to_numeric(df["Остаток"], errors="coerce").fillna(0).astype(int)
         df = df[(df["Название"] != "") & (df["Остаток"] > 0)].reset_index(drop=True)
+        self._save_warehouse_data_from_df(df)
+        if self.warehouse_file.exists():
+            try:
+                self.warehouse_file.unlink()
+            except OSError:
+                pass
         return df
 
     def _save_warehouse_data(self):
-        records: List[Dict[str, Any]] = []
+        clean = pd.DataFrame(columns=["Номер", "Название", "ШиринаЛенты", "Катушка", "Остаток"])
         if self.warehouse_data is not None and not self.warehouse_data.empty:
             clean = self.warehouse_data.copy()
             clean["Остаток"] = pd.to_numeric(clean["Остаток"], errors="coerce").fillna(0).astype(int)
-            clean = clean[clean["Остаток"] > 0]
-            records = clean.to_dict("records")
-        self.warehouse_file.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+            clean["ШиринаЛенты"] = pd.to_numeric(clean["ШиринаЛенты"], errors="coerce").fillna(self.DEFAULT_TAPE_WIDTH).astype(int)
+            clean = clean[(clean["Название"].astype(str).str.strip() != "") & (clean["Остаток"] > 0)].reset_index(drop=True)
+        self._save_warehouse_data_from_df(clean)
+        self.warehouse_data = clean
+
+    def _save_warehouse_data_from_df(self, df: pd.DataFrame):
+        with sqlite3.connect(self.warehouse_db_file) as conn:
+            conn.execute("DELETE FROM warehouse")
+            if not df.empty:
+                rows = [
+                    (
+                        str(r.get("Номер", "")),
+                        str(r.get("Название", "")).strip(),
+                        int(r.get("ШиринаЛенты", self.DEFAULT_TAPE_WIDTH)),
+                        str(r.get("Катушка", "")),
+                        int(r.get("Остаток", 0)),
+                    )
+                    for _, r in df.iterrows()
+                    if str(r.get("Название", "")).strip() and int(r.get("Остаток", 0)) > 0
+                ]
+                conn.executemany(
+                    "INSERT INTO warehouse(number, name, tape_width, coil, qty) VALUES (?, ?, ?, ?, ?)",
+                    rows,
+                )
+            conn.commit()
 
     def _upsert_warehouse(self, num: str, name: str, width: int, qty: int):
         if qty <= 0:
@@ -190,7 +261,25 @@ class SMTService:
             return {}
         current_board_data = self.all_data[self.all_data["Sheet"] == board]
         agg = current_board_data.groupby("Name").agg({"Quantity": "sum"}).reset_index()
-        return {str(r["Name"]): int(r["Quantity"]) for _, r in agg.iterrows()}
+        k = max(1, int(self.board_multiplier))
+        return {str(r["Name"]): int(r["Quantity"]) * k for _, r in agg.iterrows()}
+
+    def _best_next_board(self, board: str) -> Optional[Dict[str, Any]]:
+        if self.all_data is None or not board:
+            return None
+        current_board_data = self.all_data[self.all_data["Sheet"] == board]
+        unique_parts_current = set(current_board_data["Name"].unique())
+        matches = []
+        for other_board in self.all_data["Sheet"].unique():
+            if other_board == board or self.is_board_completed(other_board):
+                continue
+            other_data = self.all_data[self.all_data["Sheet"] == other_board]
+            shared = unique_parts_current.intersection(set(other_data["Name"].unique()))
+            matches.append({"board": other_board, "shared": len(shared)})
+        if not matches:
+            return None
+        matches.sort(key=lambda x: x["shared"], reverse=True)
+        return matches[0]
 
     def _autoload_batch_for_board(self, board: str, batch_no: int = 1) -> List[str]:
         board_key = str(board)
@@ -259,7 +348,30 @@ class SMTService:
             if board not in self.boards:
                 raise SMTServiceError(f"Плата '{board}' не найдена")
             self.current_board = board
+            self.pending_remove_components = []
             self._render_board_data(auto_assign=False)
+            self._save_progress()
+            return self.get_state()
+
+    def set_board_multiplier(self, multiplier: int) -> Dict[str, Any]:
+        with self._lock:
+            try:
+                self.board_multiplier = max(1, int(multiplier))
+            except (TypeError, ValueError):
+                raise SMTServiceError("Количество плат должно быть целым числом >= 1")
+            if self.current_board:
+                self.calculate_global()
+            self._save_progress()
+            return self.get_state()
+
+    def set_chip_feeder_limit(self, limit: int) -> Dict[str, Any]:
+        with self._lock:
+            try:
+                self.chip_feeder_limit = max(1, min(len(self.CS_BANK_SLOTS), int(limit)))
+            except (TypeError, ValueError):
+                raise SMTServiceError("Лимит фидеров должен быть целым числом >= 1")
+            if self.current_board:
+                self.calculate_global()
             self._save_progress()
             return self.get_state()
 
@@ -292,6 +404,7 @@ class SMTService:
                 raise SMTServiceError("Сначала загрузите BOM")
             if not self.current_board:
                 self.current_board = self.boards[0]
+            self.pending_remove_components = []
             self.summary["status"] = "Базовые данные подготовлены"
             self._render_board_data(auto_assign=True)
             self.summary["shortages"] = self._autoload_batch_for_board(self.current_board, batch_no=1)
@@ -306,37 +419,22 @@ class SMTService:
             board = self.current_board
             if not board:
                 raise SMTServiceError("Текущая плата не выбрана")
-
-            current_board_data = self.all_data[self.all_data["Sheet"] == board]
-            unique_parts_current = set(current_board_data["Name"].unique())
-            matches = []
-            for other_board in self.all_data["Sheet"].unique():
-                if other_board == board or self.is_board_completed(other_board):
-                    continue
-                other_data = self.all_data[self.all_data["Sheet"] == other_board]
-                shared = unique_parts_current.intersection(set(other_data["Name"].unique()))
-                matches.append({"board": other_board, "shared": len(shared)})
-
-            matches.sort(key=lambda x: x["shared"], reverse=True)
-            if not matches:
+            best = self._best_next_board(board)
+            if not best:
                 raise SMTServiceError("Нет незавершенных плат для перехода")
-
-            next_board = matches[0]["board"]
+            next_board = str(best["board"])
             self.current_board = next_board
             global_setup = {c for comps in self.setup_completed.values() for c in comps}
             next_all = set(self.all_data[self.all_data["Sheet"] == next_board]["Name"].unique())
             next_done = set(self.instr_completed.get(next_board, []))
             next_needed_active = next_all - next_done
-            items_to_remove = [comp for comp in global_setup if comp not in next_needed_active]
-            for comp in items_to_remove:
-                for b_name in list(self.setup_completed.keys()):
-                    if comp in self.setup_completed[b_name]:
-                        self.setup_completed[b_name].remove(comp)
+            items_to_remove = sorted([comp for comp in global_setup if comp not in next_needed_active])
+            self.pending_remove_components = items_to_remove
 
             self._render_board_data(auto_assign=True)
             self.summary["shortages"] = self._autoload_batch_for_board(next_board, batch_no=1)
             self._render_board_data(auto_assign=False)
-            self.summary["status"] = f"Переход на плату {next_board}. Удалено деталей: {len(items_to_remove)}"
+            self.summary["status"] = f"Переход на плату {next_board}. Снимите деталей: {len(items_to_remove)}"
             self._save_progress()
             return self.get_state()
 
@@ -363,6 +461,11 @@ class SMTService:
         all_comps_info = self.all_data.groupby("Name").agg({"Тип ленты": "first"}).reset_index()
         all_comps_info["mm"] = all_comps_info["Тип ленты"].apply(self._parse_tape_width)
         board_counts = self.all_data.groupby("Name")["Sheet"].nunique().reset_index().rename(columns={"Sheet": "board_count"})
+        best_match = self._best_next_board(board)
+        shared_with_next = set()
+        if best_match and int(best_match.get("shared", 0)) > 0:
+            next_board_data = self.all_data[self.all_data["Sheet"] == str(best_match["board"])]
+            shared_with_next = unique_parts_current.intersection(set(next_board_data["Name"].unique()))
 
         global_setup = {c for comps in self.setup_completed.values() for c in comps}
         board_feeder_map: Dict[str, Dict[str, Any]] = {}
@@ -373,18 +476,26 @@ class SMTService:
         if auto_assign:
             cs_needed = all_comps_info[(all_comps_info["Name"].isin(unique_parts_current)) & (all_comps_info["mm"] == 8)]
             pv_needed = all_comps_info[(all_comps_info["Name"].isin(unique_parts_current)) & (all_comps_info["mm"] > 8)]
+            available_cs_slots = self.CS_BANK_SLOTS[: max(1, int(self.chip_feeder_limit))]
+            available_cs_set = set(available_cs_slots)
             locked_cs_slots = set()
             for name in global_setup:
                 info = self.global_feeder_map.get(name)
                 if info and info.get("station") == "ЧИПШУТЕР":
-                    locked_cs_slots.add(info.get("slot"))
-                    if name in unique_parts_current:
+                    slot = str(info.get("slot"))
+                    if slot in available_cs_set:
+                        locked_cs_slots.add(slot)
+                    if name in unique_parts_current and slot in available_cs_set:
                         board_feeder_map[name] = {"batch": 1, "slot": info.get("slot"), "station": "ЧИПШУТЕР"}
 
             cs_unplaced = cs_needed[~cs_needed["Name"].isin(board_feeder_map.keys())]
             cs_unplaced = cs_unplaced.merge(board_counts, on="Name", how="left")
             cs_unplaced["board_count"] = pd.to_numeric(cs_unplaced["board_count"], errors="coerce").fillna(0).astype(int)
-            cs_unplaced = cs_unplaced.sort_values(by=["board_count", "Name"], ascending=[False, True])["Name"].tolist()
+            cs_unplaced["shared_next"] = cs_unplaced["Name"].map(lambda n: 1 if str(n) in shared_with_next else 0)
+            cs_unplaced = cs_unplaced.sort_values(
+                by=["shared_next", "board_count", "Name"],
+                ascending=[False, False, True],
+            )["Name"].tolist()
             used_cs_slots_in_batch: Dict[int, set] = {}
 
             def assign_next_cs_slot(comp_name: str):
@@ -394,15 +505,15 @@ class SMTService:
                     hist_info = self.global_feeder_map.get(comp_name)
                     if hist_info and hist_info.get("station") == "ЧИПШУТЕР":
                         s = hist_info.get("slot")
-                        if s not in locked_cs_slots and s not in used_cs_slots_in_batch[b]:
+                        if s in available_cs_set and s not in locked_cs_slots and s not in used_cs_slots_in_batch[b]:
                             used_cs_slots_in_batch[b].add(s)
                             return b, s
-                    for slot in self.CS_BANK_SLOTS:
+                    for slot in available_cs_slots:
                         if slot not in locked_cs_slots and slot not in used_cs_slots_in_batch[b]:
                             used_cs_slots_in_batch[b].add(slot)
                             return b, slot
                     b += 1
-                    if b > 50:
+                    if b > 100:
                         return None
 
             for name in cs_unplaced:
@@ -429,7 +540,11 @@ class SMTService:
             pv_unplaced = pv_needed[~pv_needed["Name"].isin(board_feeder_map.keys())]
             pv_unplaced = pv_unplaced.merge(board_counts, on="Name", how="left")
             pv_unplaced["board_count"] = pd.to_numeric(pv_unplaced["board_count"], errors="coerce").fillna(0).astype(int)
-            pv_unplaced = pv_unplaced.sort_values(by=["board_count", "Name"], ascending=[False, True])
+            pv_unplaced["shared_next"] = pv_unplaced["Name"].map(lambda n: 1 if str(n) in shared_with_next else 0)
+            pv_unplaced = pv_unplaced.sort_values(
+                by=["shared_next", "board_count", "Name"],
+                ascending=[False, False, True],
+            )
             pv_batch_usage: Dict[int, Dict[int, int]] = {}
             pv_batch_slots_used: Dict[int, set] = {}
 
@@ -480,25 +595,21 @@ class SMTService:
                 self.summary["status"] = f"Для компонентов {sorted(skipped_mm)}мм нет свободных слотов/лимитов"
 
         self.feeder_map = board_feeder_map
-        other = []
-        for other_board in self.all_data["Sheet"].unique():
-            if other_board == board or self.is_board_completed(other_board):
-                continue
-            other_data = self.all_data[self.all_data["Sheet"] == other_board]
-            shared = unique_parts_current.intersection(set(other_data["Name"].unique()))
-            other.append({"board": other_board, "shared": len(shared)})
-        other.sort(key=lambda x: x["shared"], reverse=True)
-        next_board_text = f"{other[0]['board']} (Общих: {other[0]['shared']})" if other and other[0]["shared"] > 0 else "нет"
+        next_board_text = "нет"
+        if best_match:
+            next_board_text = f"{best_match['board']} (Общих: {best_match['shared']})"
 
         setup_rows, instr_rows = [], []
         self.batch_comps = {}
+        qty_mul = max(1, int(self.board_multiplier))
         for _, r in df_board.iterrows():
             name = str(r["Name"])
             info = self.feeder_map.get(name, {"batch": "?", "slot": "?", "station": "?"})
             batch_label = f"{info['station']} №{info['batch']}"
             self.batch_comps.setdefault(batch_label, []).append(name)
-            setup_rows.append({"СТАНОК": info["station"], "ОЧЕРЕДЬ (ЗАГРУЗКА)": f"№ {info['batch']}", "ПОЗИЦИЯ / ФИДЕР": info["slot"], "ЧТО СТАВИМ": name, "НУЖНО ШТ": int(r["Quantity"])})
-            instr_rows.append({"ПРИОРИТЕТ": f"{info['station']} (Батч {info['batch']})", "ДЕТАЛЬ": name, "СЛОТ": info["slot"], "КОЛ-ВО": int(r["Quantity"]), "ПОЗИЦИИ (DESIGNATORS)": str(r["Designator"])})
+            qty = int(r["Quantity"]) * qty_mul
+            setup_rows.append({"СТАНОК": info["station"], "ОЧЕРЕДЬ (ЗАГРУЗКА)": f"№ {info['batch']}", "ПОЗИЦИЯ / ФИДЕР": info["slot"], "ЧТО СТАВИМ": name, "НУЖНО ШТ": qty})
+            instr_rows.append({"ПРИОРИТЕТ": f"{info['station']} (Батч {info['batch']})", "ДЕТАЛЬ": name, "СЛОТ": info["slot"], "КОЛ-ВО": qty, "ПОЗИЦИИ (DESIGNATORS)": str(r["Designator"])})
 
         df_setup, df_instr = pd.DataFrame(setup_rows), pd.DataFrame(instr_rows)
         if not df_setup.empty:
@@ -534,11 +645,13 @@ class SMTService:
         recharge_warning = f"⚠️ ТРЕБУЕТСЯ ПЕРЕЗАПРАВКА! ({', '.join(warn_text)})" if warn_text else "✅ Влазит в один заход (без перезаправок)"
 
         self.summary.update({
-            "total_parts": int(pd.to_numeric(df_board["Quantity"], errors="coerce").fillna(0).sum()),
+            "total_parts": int(pd.to_numeric(df_board["Quantity"], errors="coerce").fillna(0).sum()) * qty_mul,
             "unique_parts": int(len(df_board)),
-            "feeders_used": f"Слотов по плате: {len(df_board)} | 8 мм: {n_cs} лент, заходов чипшутера: {max_cs_b} (по {len(self.CS_BANK_SLOTS)}: L5–L29, R5–R29)",
+            "feeders_used": f"Слотов по плате: {len(df_board)} | 8 мм: {n_cs} лент, заходов чипшутера: {max_cs_b} (доступно {self.chip_feeder_limit} из {len(self.CS_BANK_SLOTS)})",
             "next_board": next_board_text,
             "recharge_warning": recharge_warning,
+            "board_multiplier": qty_mul,
+            "pending_remove": len(self.pending_remove_components),
         })
         self.table_setup = [] if df_setup.empty else df_setup.to_dict("records")
         self.table_instr = [] if df_instr.empty else df_instr.to_dict("records")
@@ -584,6 +697,7 @@ class SMTService:
                 for b_name in list(self.setup_completed.keys()):
                     if comp in self.setup_completed[b_name]:
                         self.setup_completed[b_name].remove(comp)
+                self.pending_remove_components = [x for x in self.pending_remove_components if x != comp]
                 self._save_progress()
             return self.get_state()
 
@@ -618,6 +732,7 @@ class SMTService:
         global_setup = {c for comps in self.setup_completed.values() for c in comps}
         board = self.current_board
         curr_needed_active, future_needed = set(), set()
+        pending_remove = set(self.pending_remove_components)
         if self.all_data is not None and board:
             curr_all = set(self.all_data[self.all_data["Sheet"] == board]["Name"].unique())
             curr_done = set(self.instr_completed.get(board, []))
@@ -635,15 +750,22 @@ class SMTService:
                     component = name
                     break
             status = "empty"
+            in_limit = self.CS_BANK_SLOTS.index(slot) < max(1, int(self.chip_feeder_limit))
             if component:
-                status = "active" if component in curr_needed_active else "keep" if component in future_needed else "remove"
-            chip_slots.append({"slot": slot, "component": component, "status": status})
+                if component in pending_remove:
+                    status = "remove-next"
+                else:
+                    status = "active" if component in curr_needed_active else "keep" if component in future_needed else "remove"
+            chip_slots.append({"slot": slot, "component": component, "status": status, "enabled": in_limit})
 
         spider_slots = []
         for name in sorted(global_setup):
             info = self.global_feeder_map.get(name)
             if info and info.get("station") == "ПАВУК":
-                status = "active" if name in curr_needed_active else "keep" if name in future_needed else "remove"
+                if name in pending_remove:
+                    status = "remove-next"
+                else:
+                    status = "active" if name in curr_needed_active else "keep" if name in future_needed else "remove"
                 spider_slots.append({"slot": str(info.get("slot")), "component": name, "batch": int(info.get("batch", 1)), "status": status})
         return {"chipshooter": chip_slots, "spider": spider_slots}
 
@@ -666,6 +788,9 @@ class SMTService:
                 "instr_completed": self.instr_completed,
                 "global_feeder_map": self.global_feeder_map,
                 "tape_limits": {str(k): int(v) for k, v in self.tape_limits.items()},
+                "chip_feeder_limit": int(self.chip_feeder_limit),
+                "board_multiplier": int(self.board_multiplier),
+                "pending_remove_components": self.pending_remove_components,
                 "warehouse": [] if self.warehouse_data.empty else self.warehouse_data.to_dict("records"),
                 "visual": self._machine_visual_state(),
             }

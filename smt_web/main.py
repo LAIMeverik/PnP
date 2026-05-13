@@ -14,6 +14,10 @@ class BoardRequest(BaseModel):
     board: str
 
 
+class BoardMultiplierRequest(BaseModel):
+    multiplier: int = 1
+
+
 class ToggleRequest(BaseModel):
     components: List[str]
 
@@ -24,6 +28,10 @@ class RemoveRequest(BaseModel):
 
 class TapeLimitsRequest(BaseModel):
     limits: Dict[str, Any]
+
+
+class FeedersLimitRequest(BaseModel):
+    limit: int = 50
 
 
 class ManualWarehouseRequest(BaseModel):
@@ -75,6 +83,11 @@ def set_board(req: BoardRequest):
     return _result(lambda: service.set_board(req.board))
 
 
+@app.post("/api/board-multiplier")
+def set_board_multiplier(req: BoardMultiplierRequest):
+    return _result(lambda: service.set_board_multiplier(req.multiplier))
+
+
 @app.post("/api/next-batch")
 def next_batch():
     return _result(service.next_batch)
@@ -98,6 +111,11 @@ def remove_component(req: RemoveRequest):
 @app.post("/api/tape-limits")
 def set_tape_limits(req: TapeLimitsRequest):
     return _result(lambda: service.set_tape_limits(req.limits))
+
+
+@app.post("/api/feeders-limit")
+def set_feeders_limit(req: FeedersLimitRequest):
+    return _result(lambda: service.set_chip_feeder_limit(req.limit))
 
 
 @app.post("/api/warehouse/manual")
