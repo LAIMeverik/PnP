@@ -1,5 +1,16 @@
 # Развёртывание SMT Navigator Web на Raspberry Pi 4
 
+## Структура репозитория
+
+Репозиторий содержит несколько компонентов и веток:
+
+- **`main`** — стабильная ветка. Содержит:
+  - `smt_web/` — веб-приложение (FastAPI + Uvicorn), **именно это разворачивается на RPi4**
+  - `core/`, `ui/`, `main.py` — десктопное приложение (PyQt5), для деплоя на RPi4 не нужно
+- Прочие ветки (`copilot/...` и т.д.) — рабочие/экспериментальные, для деплоя не предназначены
+
+> Для деплоя всегда используйте ветку **`main`** и работайте только с папкой **`smt_web/`**.
+
 ## 1) Подготовка Raspberry Pi
 
 ```bash
@@ -10,9 +21,11 @@ sudo apt install -y python3 python3-venv python3-pip git
 
 ## 2) Клонирование проекта
 
+Клонируем только ветку `main`:
+
 ```bash
 cd /opt
-sudo git clone https://github.com/LAIMeverik/PnP.git
+sudo git clone --branch main https://github.com/LAIMeverik/PnP.git
 sudo chown -R $USER:$USER /opt/PnP
 cd /opt/PnP
 ```
