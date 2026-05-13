@@ -152,7 +152,7 @@ class SMTService:
             )
             conn.commit()
 
-    def _load_warehouse_data(self, legacy_records: Optional[List[Dict[str, Any]] = None) -> pd.DataFrame:
+    def _load_warehouse_data(self, legacy_records: Optional[List[Dict[str, Any]]] = None) -> pd.DataFrame:
         cols = ["Номер", "Название", "ШиринаЛенты", "Катушка", "Остаток"]
         with sqlite3.connect(self.warehouse_db_file) as conn:
             db_df = pd.read_sql_query(
