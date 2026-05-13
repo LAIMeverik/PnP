@@ -72,7 +72,7 @@ class WarehouseMixin:
         self.render_warehouse_map()
 
     def load_warehouse_data(self, legacy_records=None):
-        cols = ["Номер", "Название", "ШиринаЛенты", "Катушка", "Остаток"]
+        cols = ["Номер", "Название", "Ширина Ленты", "Катушка", "Остаток"]
         records = []
 
         if os.path.exists(self.warehouse_file):

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMT Navigator Web</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet">
+    <style>
+        .glass-card { background: rgba(23, 23, 23, 0.8); backdrop-filter: blur(10px); border: 1px solid #333; }
+        .slot-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+        .feeder-slot { transition: all 0.2s; border-left: 4px solid #444; }
+        .feeder-slot:hover { transform: translateY(-2px); border-left-color: #3b82f6; }
+    </style>
+</head>
+<body class="bg-[#0a0a0a] text-gray-100 font-sans">
+    <div id="app" class="min-h-screen flex flex-col">
+        <div class="navbar bg-base-900 border-b border-white/5 px-8">
+            <div class="flex-1">
+                <span class="text-xl font-black tracking-widest text-blue-500">SMT <span class="text-white">PRO</span></span>
+            </div>
+            <div class="flex-none gap-4">
+                <div class="badge badge-outline badge-success">Raspberry Pi Online</div>
+                <button @click="uploadBOM" class="btn btn-primary btn-sm rounded-full px-6">Загрузить BOM</button>
+            </div>
+        </div>
+
+        <div class="flex flex-1 overflow-hidden">
+            <div class="w-80 border-r border-white/5 p-6 space-y-6 overflow-y-auto">
+                <h2 class="text-xs uppercase font-bold text-gray-500 tracking-widest">Прогресс сборки</h2>
+                <div v-for="(count, batch) in batches" :key="batch" class="space-y-2">
+                    <div class="flex justify-between text-sm">
+                        <span>Заход {{ batch }}</span>
+                        <span class="text-blue-400">{{ count.done }}/{{ count.total }}</span>
+                    </div>
+                    <progress class="progress progress-primary w-full" :value="count.done" :max="count.total"></progress>
+                </div>
+            </div>
+
+            <main class="flex-1 p-8 overflow-y-auto bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/10 via-transparent to-transparent">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 class="text-4xl font-bold mb-2">{{ state.current_board || 'Ожидание BOM...' }}</h1>
+                        <p class="text-gray-400">Линия активна • 50 позиций Chipshooter</p>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-3xl p-8 shadow-2xl">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="font-bold text-lg flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></span>
+                            CHIPSHOOTER: L5 — R29
+                        </h3>
+                    </div>
+
+                    <div class="slot-grid">
+                        <div v-for="slot in slots" :key="slot.id"
+                             :class="['feeder-slot p-3 rounded-lg bg-white/5 cursor-pointer', slot.is_done ? 'border-l-success bg-success/10' : '']"
+                             @click="toggleSlot(slot)">
+                            <div class="text-[10px] font-black opacity-40 mb-1">{{ slot.id }}</div>
+                            <div class="text-xs font-bold truncate">{{ slot.component || '—' }}</div>
+                            <div v-if="slot.component" class="mt-2 text-[10px] text-blue-400 font-bold uppercase tracking-tighter">B: {{ slot.batch }}</div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const state = ref({});
+                const slots = ref([]);
+                const batches = ref({});
+
+                const fetchState = async () => {
+                    const res = await fetch('/api/state');
+                    state.value = await res.json();
+                    // Генерация 50 слотов для визуала (L5-R29)
+                    slots.value = Array.from({length: 50}, (_, i) => ({
+                        id: i < 25 ? `L${i+5}` : `R${i-20}`,
+                        component: state.value.feeder_map[i]?.name || '',
+                        batch: state.value.feeder_map[i]?.batch || 1,
+                        is_done: false
+                    }));
+                };
+
+                onMounted(fetchState);
+
+                return { state, slots, batches };
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
