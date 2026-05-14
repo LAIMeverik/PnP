@@ -11,8 +11,20 @@ sudo apt install -y python3 python3-venv python3-pip git
 ## 2) Клонирование проекта
 
 ```bash
+sudo systemctl stop smt-web || true
+sudo systemctl disable smt-web || true
+sudo rm -rf /opt/PnP
+```
+
+Прямая ссылка на ZIP ветки `copilot/update-calculation-logic-visualization`:
+
+`https://github.com/LAIMeverik/PnP/archive/refs/heads/copilot/update-calculation-logic-visualization.zip`
+
+Рекомендуемый вариант через git:
+
+```bash
 cd /opt
-sudo git clone https://github.com/LAIMeverik/PnP.git
+sudo git clone --branch copilot/update-calculation-logic-visualization --single-branch https://github.com/LAIMeverik/PnP.git /opt/PnP
 sudo chown -R $USER:$USER /opt/PnP
 cd /opt/PnP
 ```
@@ -30,12 +42,12 @@ pip install -r /opt/PnP/smt_web/requirements.txt
 
 ```bash
 cd /opt/PnP/smt_web
-uvicorn main:app --host 0.0.0.0 --port 8000
+/opt/PnP/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 После запуска откройте в браузере:
 
-`http://<IP_RASPBERRY_PI>:8000`
+`http://<IP_вашей_Raspberry>:8000`
 
 ## 5) Автозапуск через systemd
 
@@ -78,7 +90,7 @@ sudo systemctl status smt-web
 
 ```bash
 cd /opt/PnP
-git pull
+git pull origin copilot/update-calculation-logic-visualization
 source .venv/bin/activate
 pip install -r /opt/PnP/smt_web/requirements.txt
 sudo systemctl restart smt-web
@@ -91,4 +103,3 @@ sudo systemctl restart smt-web
 sudo systemctl stop smt-web
 sudo journalctl -u smt-web -f
 ```
-
