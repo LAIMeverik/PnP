@@ -867,6 +867,10 @@ class SMTNavigator(QMainWindow):
                     if name in unique_parts_current:
                         board_feeder_map[name] = {'batch': 1, 'slot': info['slot'], 'station': 'ЧИПШУТЕР'}
 
+            # Count the number of boards each component appears on to prioritize common components
+            board_counts = self.all_data.groupby('Name')['Sheet'].nunique().reset_index()
+            board_counts.rename(columns={'Sheet': 'board_count'}, inplace=True)
+
             cs_unplaced_df = cs_needed[~cs_needed['Name'].isin(board_feeder_map.keys())]
             cs_unplaced_df = cs_unplaced_df.merge(board_counts, on='Name', how='left')
             cs_unplaced_df['board_count'] = pd.to_numeric(cs_unplaced_df['board_count'], errors='coerce').fillna(0).astype(int)
@@ -894,9 +898,6 @@ class SMTNavigator(QMainWindow):
                     b += 1
                     if b > 50: return None
 
-            # Count the number of boards each component appears on to prioritize common components
-            board_counts = self.all_data.groupby('Name')['Sheet'].nunique().reset_index()
-            board_counts.rename(columns={'Sheet': 'board_count'}, inplace=True)
 
             for name in cs_unplaced:
                 slot_res = assign_next_cs_slot(name)
