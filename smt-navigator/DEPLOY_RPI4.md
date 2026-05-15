@@ -104,10 +104,10 @@ sudo journalctl -u smt-web -f
 
 1. Откройте проект `PnP` в PyCharm.
 2. Выберите интерпретатор из `.venv` и установите зависимости:
-   `pip install -r /home/runner/work/PnP/PnP/smt-navigator/requirements.txt`
+   `pip install -r <project_root>/smt-navigator/requirements.txt`
 3. Создайте Run Configuration:
-   - **Script path**: `/home/runner/work/PnP/PnP/smt-navigator/main.py`
-   - **Working directory**: `/home/runner/work/PnP/PnP/smt-navigator`
+   - **Script path**: `<project_root>/smt-navigator/main.py`
+   - **Working directory**: `<project_root>/smt-navigator`
 4. (Опционально) переменные окружения:
    - `SMT_HOST=0.0.0.0`
    - `SMT_PORT=8000`
