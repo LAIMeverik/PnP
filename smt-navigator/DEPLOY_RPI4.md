@@ -15,6 +15,7 @@ cd /opt
 sudo git clone https://github.com/LAIMeverik/PnP.git
 sudo chown -R $USER:$USER /opt/PnP
 cd /opt/PnP
+git checkout final
 ```
 
 ## 3) Установка зависимостей
@@ -79,10 +80,17 @@ sudo systemctl status smt-web
 ```bash
 cd /opt/PnP
 git pull
+git checkout final
 source .venv/bin/activate
 pip install -r /opt/PnP/smt_web/requirements.txt
 sudo systemctl restart smt-web
 ```
+
+## 8) Данные склада (SQLite)
+
+- Склад теперь хранится в файле: `/opt/PnP/warehouse.db`
+- При первом запуске данные из старого `warehouse.json` автоматически мигрируются в SQLite.
+- Для бэкапа достаточно копировать `warehouse.db` и `smt_progress.json`.
 
 ## 7) Полезные команды
 
@@ -91,4 +99,3 @@ sudo systemctl restart smt-web
 sudo systemctl stop smt-web
 sudo journalctl -u smt-web -f
 ```
-

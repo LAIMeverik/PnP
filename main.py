@@ -9,10 +9,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QShortcut, QKeySequence
 
-from core.pnp_logic import PnPLogicMixin
-from core.warehouse_manager import WarehouseMixin
-from ui.visual_map import VisualMapMixin
-from ui.progress_panel import ProgressPanelMixin
+from Legacy.core.pnp_logic import PnPLogicMixin
+from Legacy.core import WarehouseMixin
+from Legacy.ui import VisualMapMixin
+from Legacy.ui import ProgressPanelMixin
 
 
 class SMTNavigator(VisualMapMixin, ProgressPanelMixin, WarehouseMixin, PnPLogicMixin, QMainWindow):

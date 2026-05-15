@@ -1,0 +1,741 @@
+{
+    "setup": {
+        "антена": [],
+        "мэйн": [
+            "RC0603FR-0733KL",
+            "RC0603FR-071ML",
+            "RC0603FR-076K8L",
+            "RC1206FR-070RL",
+            "RC0603FR-0710KL",
+            "RC0603FR-070RL",
+            "BC817-40",
+            "RC1206FR-071R2L",
+            "RS8411XF",
+            "RC0603FR-072K7L",
+            "CC0603KRX7R9BB105",
+            "WM02N28M"
+        ],
+        "лсд": []
+    },
+    "instr": {
+        "антена": [],
+        "мэйн": [],
+        "лсд": []
+    },
+    "global_feeder_map": {
+        "FYLS-1206UWC": {
+            "batch": 1,
+            "slot": "L5",
+            "station": "ЧИПШУТЕР"
+        },
+        "DS1031-01-1x5P8BV31-3A": {
+            "batch": 1,
+            "slot": "L6",
+            "station": "ЧИПШУТЕР"
+        },
+        "BC817-40": {
+            "batch": 1,
+            "slot": "L6",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603KRX7R9BB105": {
+            "batch": 1,
+            "slot": "L7",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-070RL": {
+            "batch": 1,
+            "slot": "L8",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0710KL": {
+            "batch": 1,
+            "slot": "L9",
+            "station": "ЧИПШУТЕР"
+        },
+        "BLM18PG221SN1D": {
+            "batch": 1,
+            "slot": "L10",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0402KRX5R9BB104": {
+            "batch": 1,
+            "slot": "L11",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603MRX5R7BB106": {
+            "batch": 1,
+            "slot": "L12",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0805MKX5R8BB226": {
+            "batch": 1,
+            "slot": "L13",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07100RL": {
+            "batch": 1,
+            "slot": "L14",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-071KL": {
+            "batch": 1,
+            "slot": "L15",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-071ML": {
+            "batch": 1,
+            "slot": "L16",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-072K7L": {
+            "batch": 1,
+            "slot": "L17",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-072RL": {
+            "batch": 1,
+            "slot": "L18",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0733KL": {
+            "batch": 1,
+            "slot": "L19",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-076K8L": {
+            "batch": 1,
+            "slot": "L20",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC1206FR-070RL": {
+            "batch": 1,
+            "slot": "L21",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC1206FR-071R2L": {
+            "batch": 1,
+            "slot": "L22",
+            "station": "ЧИПШУТЕР"
+        },
+        "WM02N28M": {
+            "batch": 1,
+            "slot": "L23",
+            "station": "ЧИПШУТЕР"
+        },
+        "525592052": {
+            "batch": 1,
+            "slot": "L24",
+            "station": "ЧИПШУТЕР"
+        },
+        "15EDGVC-3.5-03P-14-00A(H)": {
+            "batch": 1,
+            "slot": "L25",
+            "station": "ЧИПШУТЕР"
+        },
+        "15EDGVC-3.5-04P-14-00A(H)": {
+            "batch": 1,
+            "slot": "L26",
+            "station": "ЧИПШУТЕР"
+        },
+        "15EDGVC-3.5-05P-14-00A(H)": {
+            "batch": 1,
+            "slot": "L27",
+            "station": "ЧИПШУТЕР"
+        },
+        "15EDGVC-3.5-06P-14-00A(H)": {
+            "batch": 1,
+            "slot": "L28",
+            "station": "ЧИПШУТЕР"
+        },
+        "15EDGVC-3.5-08P-14-00A(H)": {
+            "batch": 1,
+            "slot": "L29",
+            "station": "ЧИПШУТЕР"
+        },
+        "1N5817WS": {
+            "batch": 1,
+            "slot": "R5",
+            "station": "ЧИПШУТЕР"
+        },
+        "AO4407A": {
+            "batch": 1,
+            "slot": "R6",
+            "station": "ЧИПШУТЕР"
+        },
+        "AP2120N-1.8TRG1": {
+            "batch": 1,
+            "slot": "R7",
+            "station": "ЧИПШУТЕР"
+        },
+        "B2B-XH-A": {
+            "batch": 1,
+            "slot": "R8",
+            "station": "ЧИПШУТЕР"
+        },
+        "BC807-40": {
+            "batch": 1,
+            "slot": "R9",
+            "station": "ЧИПШУТЕР"
+        },
+        "BCP56-10": {
+            "batch": 1,
+            "slot": "R10",
+            "station": "ЧИПШУТЕР"
+        },
+        "BFR520": {
+            "batch": 1,
+            "slot": "R11",
+            "station": "ЧИПШУТЕР"
+        },
+        "BL8033CB6TR": {
+            "batch": 1,
+            "slot": "R12",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0402JRNPO9BN100": {
+            "batch": 1,
+            "slot": "R13",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0402JRNPO9BN180": {
+            "batch": 1,
+            "slot": "R14",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN102": {
+            "batch": 1,
+            "slot": "R15",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN103": {
+            "batch": 1,
+            "slot": "R16",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN121": {
+            "batch": 1,
+            "slot": "R17",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN150": {
+            "batch": 1,
+            "slot": "R18",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN1810": {
+            "batch": 1,
+            "slot": "R19",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN220": {
+            "batch": 1,
+            "slot": "R20",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN270": {
+            "batch": 1,
+            "slot": "R21",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN330": {
+            "batch": 1,
+            "slot": "R22",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN560": {
+            "batch": 1,
+            "slot": "R23",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603JRNPO9BN682": {
+            "batch": 1,
+            "slot": "R24",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603KRX7R9BB104": {
+            "batch": 1,
+            "slot": "R25",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603KRX7R9BB474": {
+            "batch": 1,
+            "slot": "R26",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC0603MRX5R6BB226": {
+            "batch": 1,
+            "slot": "R27",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC1206KKX7R0BB225": {
+            "batch": 1,
+            "slot": "R28",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC1206KKX7RDBB102": {
+            "batch": 1,
+            "slot": "R29",
+            "station": "ЧИПШУТЕР"
+        },
+        "CC1206MKX5R6BB476": {
+            "batch": 2,
+            "slot": "L6",
+            "station": "ЧИПШУТЕР"
+        },
+        "CDRH127/LDNP-820MC": {
+            "batch": 2,
+            "slot": "L7",
+            "station": "ЧИПШУТЕР"
+        },
+        "DCS5R5334HF": {
+            "batch": 2,
+            "slot": "L8",
+            "station": "ЧИПШУТЕР"
+        },
+        "DM3AT-SF-PEJM5": {
+            "batch": 2,
+            "slot": "L9",
+            "station": "ЧИПШУТЕР"
+        },
+        "DS-1021-2x5": {
+            "batch": 2,
+            "slot": "L10",
+            "station": "ЧИПШУТЕР"
+        },
+        "DS1023-1X8S21": {
+            "batch": 2,
+            "slot": "L11",
+            "station": "ЧИПШУТЕР"
+        },
+        "DS1065-01-1X14S8BV": {
+            "batch": 2,
+            "slot": "L12",
+            "station": "ЧИПШУТЕР"
+        },
+        "DS1065-01-1X5S8BV": {
+            "batch": 2,
+            "slot": "L13",
+            "station": "ЧИПШУТЕР"
+        },
+        "DTSM-61R-V-T/R": {
+            "batch": 2,
+            "slot": "L14",
+            "station": "ЧИПШУТЕР"
+        },
+        "EEEFK1J101P": {
+            "batch": 2,
+            "slot": "L15",
+            "station": "ЧИПШУТЕР"
+        },
+        "ESDA5V3SC5": {
+            "batch": 2,
+            "slot": "L16",
+            "station": "ЧИПШУТЕР"
+        },
+        "HFD4/5-SR": {
+            "batch": 2,
+            "slot": "L17",
+            "station": "ЧИПШУТЕР"
+        },
+        "KPS-28010BTLD": {
+            "batch": 2,
+            "slot": "L18",
+            "station": "ЧИПШУТЕР"
+        },
+        "KPT-1608EC": {
+            "batch": 2,
+            "slot": "L19",
+            "station": "ЧИПШУТЕР"
+        },
+        "KPT-1608SGC": {
+            "batch": 2,
+            "slot": "L20",
+            "station": "ЧИПШУТЕР"
+        },
+        "L-32P3C": {
+            "batch": 2,
+            "slot": "L21",
+            "station": "ЧИПШУТЕР"
+        },
+        "L-KLS1-1240E-5.4-15-T-R": {
+            "batch": 2,
+            "slot": "L22",
+            "station": "ЧИПШУТЕР"
+        },
+        "L-KLS12-140-8P8C-W-5-01": {
+            "batch": 2,
+            "slot": "L23",
+            "station": "ЧИПШУТЕР"
+        },
+        "LP1188NL": {
+            "batch": 2,
+            "slot": "L24",
+            "station": "ЧИПШУТЕР"
+        },
+        "MB6S": {
+            "batch": 2,
+            "slot": "L25",
+            "station": "ЧИПШУТЕР"
+        },
+        "MFRC522": {
+            "batch": 2,
+            "slot": "L26",
+            "station": "ЧИПШУТЕР"
+        },
+        "MLF1608DR56KTA00": {
+            "batch": 2,
+            "slot": "L27",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0402FR-071ML": {
+            "batch": 2,
+            "slot": "L28",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0402FR-076K04L": {
+            "batch": 2,
+            "slot": "L29",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07100KL": {
+            "batch": 2,
+            "slot": "R5",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0710K5L": {
+            "batch": 2,
+            "slot": "R6",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07110KL": {
+            "batch": 2,
+            "slot": "R7",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07120KL": {
+            "batch": 2,
+            "slot": "R8",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0713KL": {
+            "batch": 2,
+            "slot": "R9",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07150KL": {
+            "batch": 2,
+            "slot": "R10",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0715KL": {
+            "batch": 2,
+            "slot": "R11",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07200KL": {
+            "batch": 2,
+            "slot": "R12",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07220RL": {
+            "batch": 2,
+            "slot": "R13",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0722K1L": {
+            "batch": 2,
+            "slot": "R14",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07240RL": {
+            "batch": 2,
+            "slot": "R15",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0724K9L": {
+            "batch": 2,
+            "slot": "R16",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-072K2L": {
+            "batch": 2,
+            "slot": "R17",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-072M7L": {
+            "batch": 2,
+            "slot": "R18",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0749K9L": {
+            "batch": 2,
+            "slot": "R19",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-074K7L": {
+            "batch": 2,
+            "slot": "R20",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0751KL": {
+            "batch": 2,
+            "slot": "R21",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0756KL": {
+            "batch": 2,
+            "slot": "R22",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07620RL": {
+            "batch": 2,
+            "slot": "R23",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07680RL": {
+            "batch": 2,
+            "slot": "R24",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-076K2L": {
+            "batch": 2,
+            "slot": "R25",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-0775RL": {
+            "batch": 2,
+            "slot": "R26",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0805FR-074K7L": {
+            "batch": 2,
+            "slot": "R27",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC1206FR-0722RL": {
+            "batch": 2,
+            "slot": "R28",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC1206FR-07430RL": {
+            "batch": 2,
+            "slot": "R29",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC1206FR-076R2L": {
+            "batch": 3,
+            "slot": "L6",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC1206FR-07820RL": {
+            "batch": 3,
+            "slot": "L7",
+            "station": "ЧИПШУТЕР"
+        },
+        "RS2057XH": {
+            "batch": 3,
+            "slot": "L8",
+            "station": "ЧИПШУТЕР"
+        },
+        "RV1106G3": {
+            "batch": 3,
+            "slot": "L9",
+            "station": "ЧИПШУТЕР"
+        },
+        "SJK-7L-32.768-7-20-70-C": {
+            "batch": 3,
+            "slot": "L10",
+            "station": "ЧИПШУТЕР"
+        },
+        "SMBJ12CA": {
+            "batch": 3,
+            "slot": "L11",
+            "station": "ЧИПШУТЕР"
+        },
+        "SMBJ26CA": {
+            "batch": 3,
+            "slot": "L12",
+            "station": "ЧИПШУТЕР"
+        },
+        "SMBJ58A": {
+            "batch": 3,
+            "slot": "L13",
+            "station": "ЧИПШУТЕР"
+        },
+        "SMBJ6.8CA": {
+            "batch": 3,
+            "slot": "L14",
+            "station": "ЧИПШУТЕР"
+        },
+        "SN74LVC1G14DBVR": {
+            "batch": 3,
+            "slot": "L15",
+            "station": "ЧИПШУТЕР"
+        },
+        "SS24A": {
+            "batch": 3,
+            "slot": "L16",
+            "station": "ЧИПШУТЕР"
+        },
+        "SY7208ABC": {
+            "batch": 3,
+            "slot": "L17",
+            "station": "ЧИПШУТЕР"
+        },
+        "SY8089A1AAC": {
+            "batch": 3,
+            "slot": "L18",
+            "station": "ЧИПШУТЕР"
+        },
+        "TSAL5100": {
+            "batch": 3,
+            "slot": "L19",
+            "station": "ЧИПШУТЕР"
+        },
+        "TSS-TD-19XA-XTR": {
+            "batch": 3,
+            "slot": "L20",
+            "station": "ЧИПШУТЕР"
+        },
+        "VLS252012HBX-2R2M-1": {
+            "batch": 3,
+            "slot": "L21",
+            "station": "ЧИПШУТЕР"
+        },
+        "VLS5045EX-6R8M": {
+            "batch": 3,
+            "slot": "L22",
+            "station": "ЧИПШУТЕР"
+        },
+        "WM03P41M": {
+            "batch": 3,
+            "slot": "L23",
+            "station": "ЧИПШУТЕР"
+        },
+        "X322524MOB4SI": {
+            "batch": 3,
+            "slot": "L24",
+            "station": "ЧИПШУТЕР"
+        },
+        "XRCGB27M120F3M10R0": {
+            "batch": 3,
+            "slot": "L25",
+            "station": "ЧИПШУТЕР"
+        },
+        "RS8411XF": {
+            "batch": 1,
+            "slot": "L1-L2 (12мм)",
+            "station": "ПАВУК"
+        },
+        "78M05": {
+            "batch": 1,
+            "slot": "L3-L4 (16мм)",
+            "station": "ПАВУК"
+        },
+        "78M12": {
+            "batch": 1,
+            "slot": "L5-L6 (12мм)",
+            "station": "ПАВУК"
+        },
+        "BISS0001": {
+            "batch": 1,
+            "slot": "L7-L8 (12мм)",
+            "station": "ПАВУК"
+        },
+        "CS48520S": {
+            "batch": 1,
+            "slot": "L9-L10 (12мм)",
+            "station": "ПАВУК"
+        },
+        "ESP32-WROOM-32D[16MB]": {
+            "batch": 1,
+            "slot": "L11-L13 (44мм)",
+            "station": "ПАВУК"
+        },
+        "GD5F1GQ5UEYIGR": {
+            "batch": 1,
+            "slot": "L14-L15 (12мм)",
+            "station": "ПАВУК"
+        },
+        "LIS2DH12TR": {
+            "batch": 1,
+            "slot": "L16-L17 (12мм)",
+            "station": "ПАВУК"
+        },
+        "PCF8574T": {
+            "batch": 2,
+            "slot": "L1-L2 (16мм)",
+            "station": "ПАВУК"
+        },
+        "SY8502FCC": {
+            "batch": 1,
+            "slot": "L18-L19 (12мм)",
+            "station": "ПАВУК"
+        },
+        "TPS2375D": {
+            "batch": 1,
+            "slot": "R1-R2 (12мм)",
+            "station": "ПАВУК"
+        },
+        "74LVC1G08GW.125": {
+            "batch": 1,
+            "slot": "L5",
+            "station": "ЧИПШУТЕР"
+        },
+        "B57330V2103F260": {
+            "batch": 1,
+            "slot": "L10",
+            "station": "ЧИПШУТЕР"
+        },
+        "DS1031-01-1x14P8BV31-3A": {
+            "batch": 1,
+            "slot": "L11",
+            "station": "ЧИПШУТЕР"
+        },
+        "L-KLS1-1242E-2.0-40-T-U-R": {
+            "batch": 1,
+            "slot": "L12",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-07220KL": {
+            "batch": 1,
+            "slot": "L13",
+            "station": "ЧИПШУТЕР"
+        },
+        "RC0603FR-075K1L": {
+            "batch": 1,
+            "slot": "L14",
+            "station": "ЧИПШУТЕР"
+        },
+        "TP1961-TR": {
+            "batch": 1,
+            "slot": "L15",
+            "station": "ЧИПШУТЕР"
+        },
+        "AP2210N-3.3TRG1": {
+            "batch": 1,
+            "slot": "L3-L4 (12мм)",
+            "station": "ПАВУК"
+        }
+    },
+    "tape_limits": {
+        "8": 0,
+        "12": 10,
+        "16": 1,
+        "24": 4,
+        "32": 1,
+        "44": 2
+    },
+    "batch_stock_deducted": {
+        "антена": [
+            1
+        ],
+        "мэйн": [
+            1
+        ],
+        "лсд": [
+            1
+        ]
+    }
+}

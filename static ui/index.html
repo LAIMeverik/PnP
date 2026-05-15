@@ -6,23 +6,29 @@
   <title>SMT Navigator Web</title>
   <style>
     :root { color-scheme: dark; }
-    body { margin: 0; font-family: Arial, sans-serif; background: #111; color: #eee; }
-    .wrap { padding: 16px; max-width: 1400px; margin: 0 auto; }
+    body { margin: 0; font-family: Inter, Arial, sans-serif; background: radial-gradient(circle at top, #1e293b, #0b1020 45%); color: #e2e8f0; }
+    .wrap { padding: 20px; max-width: 1480px; margin: 0 auto; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .panel { border: 1px solid #2f2f2f; border-radius: 10px; background: #1a1a1a; padding: 12px; margin-top: 12px; }
-    .slot-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
-    .slot { border-radius: 6px; padding: 8px; border: 1px solid #333; background: #222; font-size: 12px; min-height: 44px; cursor: pointer; }
-    .slot.active { background: #1b5e20; border-color: #4caf50; }
-    .slot.keep { background: #d84315; border-color: #ff7043; }
-    .slot.remove { background: #5d4037; border-color: #8d6e63; }
+    .panel { border: 1px solid #334155; border-radius: 14px; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(3px); padding: 14px; margin-top: 12px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25); }
+    .machine-stage { display: grid; grid-template-columns: 1fr 320px 1fr; gap: 14px; align-items: stretch; min-height: 520px; }
+    .machine-side { display: grid; gap: 6px; align-content: start; }
+    .machine-center { border: 2px dashed #64748b; border-radius: 16px; background: linear-gradient(145deg, #0f172a, #1e293b); display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; font-weight: 700; color: #cbd5e1; flex-direction: column; }
+    .slot { border-radius: 8px; padding: 7px; border: 1px solid #475569; background: #1e293b; font-size: 12px; min-height: 44px; cursor: pointer; transition: all 0.2s ease; }
+    .slot:hover { transform: translateY(-1px); border-color: #94a3b8; }
+    .slot.active { background: #14532d; border-color: #4ade80; } /* Зеленый - поставить */
+    .slot.keep { background: #334155; border-color: #94a3b8; } /* Серый - оставить */
+    .slot.remove { background: #3f3f46; border-color: #a1a1aa; }
+    .slot.remove-next { background: #7f1d1d; border-color: #ef4444; } /* Красный - снять */
+    .slot.disabled { opacity: 0.4; cursor: default; }
+    .slot.disabled:hover { transform: none; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { border: 1px solid #333; padding: 6px; }
-    th { background: #222; }
+    th, td { border: 1px solid #334155; padding: 6px; }
+    th { background: #1e293b; }
     tr.done { background: #1b5e20; }
     .ok { color: #4caf50; }
     .warn { color: #ff7043; }
     .err { color: #ff5252; }
-    button, select, input { background: #202020; color: #fff; border: 1px solid #444; border-radius: 6px; padding: 6px 8px; }
+    button, select, input { background: #0f172a; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 6px 8px; }
     button { cursor: pointer; }
     .progress-row { display: grid; grid-template-columns: 220px 1fr 70px; gap: 8px; align-items: center; margin-bottom: 6px; }
   </style>
@@ -39,6 +45,12 @@
         <button id="nextBtn">Следующий заход</button>
         <label>Плата:</label>
         <select id="boardSel"></select>
+        <label>Плат в панели:</label>
+        <input id="boardMultiplier" type="number" min="1" value="1" style="width:90px;" />
+        <button id="saveBoardMultiplierBtn">Применить</button>
+        <label>Фидеров 8мм:</label>
+        <input id="chipFeederLimit" type="number" min="1" max="50" value="50" style="width:90px;" />
+        <button id="saveChipFeederLimitBtn">Применить</button>
       </div>
       <div id="status" class="warn" style="margin-top:8px;"></div>
       <div id="summary" style="margin-top:8px;"></div>
@@ -56,8 +68,12 @@
     </div>
 
     <div class="panel">
-      <h3>Чипшутер L5-R29 (клик по слоту: снять деталь из станка)</h3>
-      <div id="chipGrid" class="slot-grid"></div>
+      <h3>Визуальная карта станка (клик по установленному компоненту: снять со станка)</h3>
+      <div class="machine-stage">
+        <div id="chipLeft" class="machine-side"></div>
+        <div id="machineCenter" class="machine-center"></div>
+        <div id="chipRight" class="machine-side"></div>
+      </div>
     </div>
 
     <div class="panel">
