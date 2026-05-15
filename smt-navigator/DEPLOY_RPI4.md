@@ -30,7 +30,7 @@ pip install -r /opt/PnP/smt_web/requirements.txt
 ## 4) Локальный запуск
 
 ```bash
-cd /opt/PnP/smt_web
+cd /opt/PnP/smt-navigator
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -56,7 +56,7 @@ After=network.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/opt/PnP/smt_web
+WorkingDirectory=/opt/PnP/smt-navigator
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/PnP/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
@@ -82,7 +82,7 @@ cd /opt/PnP
 git pull
 git checkout final
 source .venv/bin/activate
-pip install -r /opt/PnP/smt_web/requirements.txt
+pip install -r /opt/PnP/smt-navigator/requirements.txt
 sudo systemctl restart smt-web
 ```
 
@@ -99,3 +99,18 @@ sudo systemctl restart smt-web
 sudo systemctl stop smt-web
 sudo journalctl -u smt-web -f
 ```
+
+## 9) Тест напрямую в PyCharm (IDE)
+
+1. Откройте проект `PnP` в PyCharm.
+2. Выберите интерпретатор из `.venv` и установите зависимости:
+   `pip install -r /home/runner/work/PnP/PnP/smt-navigator/requirements.txt`
+3. Создайте Run Configuration:
+   - **Script path**: `/home/runner/work/PnP/PnP/smt-navigator/main.py`
+   - **Working directory**: `/home/runner/work/PnP/PnP/smt-navigator`
+4. (Опционально) переменные окружения:
+   - `SMT_HOST=0.0.0.0`
+   - `SMT_PORT=8000`
+   - `SMT_RELOAD=1` (для авто-перезапуска при изменениях)
+5. Запустите конфигурацию и откройте:
+   `http://127.0.0.1:8000`

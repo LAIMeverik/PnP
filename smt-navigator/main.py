@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -147,3 +148,14 @@ def clear_all_warehouse():
 @app.post("/api/project/clear")
 def clear_project():
     return _result(service.clear_project)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("SMT_HOST", "0.0.0.0"),
+        port=int(os.getenv("SMT_PORT", "8000")),
+        reload=os.getenv("SMT_RELOAD", "0") == "1",
+    )
