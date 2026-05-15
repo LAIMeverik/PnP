@@ -100,7 +100,7 @@ sudo systemctl stop smt-web
 sudo journalctl -u smt-web -f
 ```
 
-## 9) Тест напрямую в PyCharm (IDE)
+## 9) Тестирование напрямую в PyCharm (IDE)
 
 1. Откройте проект `PnP` в PyCharm.
 2. Выберите интерпретатор из `.venv` и установите зависимости:
