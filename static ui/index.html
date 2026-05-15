@@ -31,6 +31,7 @@
     button, select, input { background: #0f172a; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 6px 8px; }
     button { cursor: pointer; }
     .progress-row { display: grid; grid-template-columns: 220px 1fr 70px; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .log-console { background: #020617; border: 1px solid #1e293b; border-radius: 8px; padding: 10px; height: 180px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -103,8 +104,16 @@
         <input id="whWidth" type="number" value="8" min="8" />
         <input id="whQty" type="number" value="0" min="0" />
         <button id="addWhBtn">Добавить вручную</button>
+        <button id="clearZeroWhBtn">Очистить 0 остатки</button>
+        <button id="clearAllWhBtn">Экстренно очистить склад</button>
+        <button id="clearProjectBtn">Очистить проект</button>
       </div>
       <table id="warehouseTable" style="margin-top:8px;"></table>
+    </div>
+
+    <div class="panel">
+      <h3>Log Console</h3>
+      <div id="logConsole" class="log-console">Нет сообщений</div>
     </div>
   </div>
 

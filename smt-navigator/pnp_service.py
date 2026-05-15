@@ -2,6 +2,7 @@ import io
 import json
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional
@@ -39,9 +40,11 @@ class SMTService:
         self.batch_stock_deducted: Dict[str, List[int]] = {}
         self.batch_comps: Dict[str, List[str]] = {}
         self.pending_remove_components: List[str] = []
+        self.last_prefill_components: List[str] = []
         self.chip_feeder_limit: int = len(self.CS_BANK_SLOTS)
         self.board_multiplier: int = 1
         self.tape_limits: Dict[int, int] = {8: 0, 12: 10, 16: 10, 24: 10, 32: 10, 44: 10}
+        self.log_console: List[str] = []
         self.summary: Dict[str, Any] = {
             "status": "Ожидание загрузки BOM",
             "total_parts": 0,
@@ -90,6 +93,11 @@ class SMTService:
             if self.boards:
                 self.current_board = saved_board if saved_board in self.boards else self.boards[0]
                 self.calculate_global()
+
+    def _log(self, message: str):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self.log_console.append(f"[{ts}] {message}")
+        self.log_console = self.log_console[-200:]
 
     @staticmethod
     def _cs_slot_order(slot: Any) -> int:
@@ -264,24 +272,44 @@ class SMTService:
         k = max(1, int(self.board_multiplier))
         return {str(r["Name"]): int(r["Quantity"]) * k for _, r in agg.iterrows()}
 
+    def _choose_start_board(self) -> str:
+        if self.all_data is None or self.all_data.empty:
+            return self.boards[0] if self.boards else ""
+        stats = []
+        for board in self.all_data["Sheet"].unique():
+            board_parts = set(self.all_data[self.all_data["Sheet"] == board]["Name"].astype(str).unique())
+            stats.append((board, len(board_parts)))
+        stats.sort(key=lambda x: (-x[1], str(x[0])))
+        return str(stats[0][0]) if stats else (self.boards[0] if self.boards else "")
+
+    def _installed_components(self) -> set:
+        return {str(c) for comps in self.setup_completed.values() for c in comps}
+
     def _best_next_board(self, board: str) -> Optional[Dict[str, Any]]:
-        if self.all_data is None or not board:
+        if self.all_data is None:
             return None
-        current_board_data = self.all_data[self.all_data["Sheet"] == board]
-        unique_parts_current = set(current_board_data["Name"].unique())
+        installed = self._installed_components()
+        unique_parts_current = set()
+        if board:
+            current_board_data = self.all_data[self.all_data["Sheet"] == board]
+            unique_parts_current = set(current_board_data["Name"].astype(str).unique())
+        compare_set = installed if installed else unique_parts_current
+        if not compare_set:
+            return None
         matches = []
         for other_board in self.all_data["Sheet"].unique():
             if other_board == board or self.is_board_completed(other_board):
                 continue
             other_data = self.all_data[self.all_data["Sheet"] == other_board]
-            shared = unique_parts_current.intersection(set(other_data["Name"].unique()))
-            matches.append({"board": other_board, "shared": len(shared)})
+            needed = set(other_data["Name"].astype(str).unique())
+            shared = compare_set.intersection(needed)
+            matches.append({"board": other_board, "shared": len(shared), "need": len(needed)})
         if not matches:
             return None
-        matches.sort(key=lambda x: x["shared"], reverse=True)
+        matches.sort(key=lambda x: (x["shared"], x["need"]), reverse=True)
         return matches[0]
 
-    def _autoload_batch_for_board(self, board: str, batch_no: int = 1) -> List[str]:
+    def _autoload_batch_for_board(self, board: str, batch_no: int = 1, only_newly_installed: bool = False) -> List[str]:
         board_key = str(board)
         loaded = [int(x) for x in self.batch_stock_deducted.get(board_key, []) if str(x).isdigit()]
         if batch_no in loaded:
@@ -304,13 +332,16 @@ class SMTService:
             if b == batch_no:
                 to_load.append(name)
 
+        newly_installed = []
         for name in to_load:
             if name not in global_setup and name not in self.setup_completed[board_key]:
                 self.setup_completed[board_key].append(name)
                 global_setup.add(name)
+                newly_installed.append(name)
 
         shortages = []
-        for name in to_load:
+        names_to_consume = newly_installed if only_newly_installed else to_load
+        for name in names_to_consume:
             qty = int(qty_map.get(name, 0))
             left = self._consume_from_first_coil(name, qty)
             if left > 0:
@@ -319,6 +350,31 @@ class SMTService:
         self.batch_stock_deducted.setdefault(board_key, []).append(batch_no)
         self._save_warehouse_data()
         self._save_progress()
+        return shortages
+
+    def _prefill_qty_for_component(self, comp_name: str) -> int:
+        qty_candidates = []
+        if self.all_data is None:
+            return 1
+        for board in self.all_data["Sheet"].unique():
+            if self.is_board_completed(board):
+                continue
+            board_map = self._board_qty_map(str(board))
+            if comp_name in board_map:
+                qty_candidates.append(int(board_map[comp_name]))
+        if not qty_candidates:
+            return 1
+        return max(1, min(qty_candidates))
+
+    def _consume_prefill_components(self, components: List[str]) -> List[str]:
+        shortages = []
+        for name in components:
+            qty = self._prefill_qty_for_component(str(name))
+            left = self._consume_from_first_coil(str(name), qty)
+            if left > 0:
+                shortages.append(f"{name}: не хватило {left} шт. (забивка)")
+        if components:
+            self._save_warehouse_data()
         return shortages
 
     def _load_bom_from_file(self, path: Path):
@@ -339,7 +395,8 @@ class SMTService:
             if not self.boards:
                 raise SMTServiceError("В BOM не найдено листов")
             self.batch_stock_deducted = {}
-            self.current_board = self.boards[0]
+            self.current_board = self._choose_start_board()
+            self._log(f"BOM загружен. Стартовая плата: {self.current_board}")
             self.calculate_global()
             return self.get_state()
 
@@ -350,6 +407,7 @@ class SMTService:
             self.current_board = board
             self.pending_remove_components = []
             self._render_board_data(auto_assign=False)
+            self._log(f"Выбрана плата: {board}")
             self._save_progress()
             return self.get_state()
 
@@ -361,6 +419,7 @@ class SMTService:
                 raise SMTServiceError("Количество плат должно быть целым числом >= 1")
             if self.current_board:
                 self.calculate_global()
+            self._log(f"Изменён множитель панели: {self.board_multiplier}")
             self._save_progress()
             return self.get_state()
 
@@ -372,6 +431,7 @@ class SMTService:
                 raise SMTServiceError("Лимит фидеров должен быть целым числом >= 1")
             if self.current_board:
                 self.calculate_global()
+            self._log(f"Изменён лимит 8мм фидеров: {self.chip_feeder_limit}")
             self._save_progress()
             return self.get_state()
 
@@ -385,6 +445,7 @@ class SMTService:
                         pass
             if self.current_board:
                 self.calculate_global()
+            self._log("Обновлены лимиты павука")
             self._save_progress()
             return self.get_state()
 
@@ -403,12 +464,17 @@ class SMTService:
             if self.all_data is None:
                 raise SMTServiceError("Сначала загрузите BOM")
             if not self.current_board:
-                self.current_board = self.boards[0]
+                self.current_board = self._choose_start_board()
             self.pending_remove_components = []
             self.summary["status"] = "Базовые данные подготовлены"
             self._render_board_data(auto_assign=True)
-            self.summary["shortages"] = self._autoload_batch_for_board(self.current_board, batch_no=1)
+            first_iteration = not any(v for v in self.batch_stock_deducted.values())
+            shortages = self._autoload_batch_for_board(self.current_board, batch_no=1, only_newly_installed=False)
+            if first_iteration:
+                shortages.extend(self._consume_prefill_components(self.last_prefill_components))
+            self.summary["shortages"] = shortages
             self._render_board_data(auto_assign=False)
+            self._log(f"Выполнен расчёт для платы: {self.current_board}")
             self._save_progress()
             return self.get_state()
 
@@ -432,9 +498,10 @@ class SMTService:
             self.pending_remove_components = items_to_remove
 
             self._render_board_data(auto_assign=True)
-            self.summary["shortages"] = self._autoload_batch_for_board(next_board, batch_no=1)
+            self.summary["shortages"] = self._autoload_batch_for_board(next_board, batch_no=1, only_newly_installed=True)
             self._render_board_data(auto_assign=False)
             self.summary["status"] = f"Переход на плату {next_board}. Снимите деталей: {len(items_to_remove)}"
+            self._log(f"Переход на плату {next_board}. К снятию: {len(items_to_remove)}")
             self._save_progress()
             return self.get_state()
 
@@ -474,8 +541,20 @@ class SMTService:
                 board_feeder_map[nm] = dict(self.global_feeder_map[nm])
 
         if auto_assign:
+            self.last_prefill_components = []
             cs_needed = all_comps_info[(all_comps_info["Name"].isin(unique_parts_current)) & (all_comps_info["mm"] == 8)]
             pv_needed = all_comps_info[(all_comps_info["Name"].isin(unique_parts_current)) & (all_comps_info["mm"] > 8)]
+            remaining_boards = [b for b in self.all_data["Sheet"].unique() if b != board and not self.is_board_completed(str(b))]
+            remaining_parts = set()
+            if remaining_boards:
+                remaining_parts = set(self.all_data[self.all_data["Sheet"].isin(remaining_boards)]["Name"].astype(str).unique())
+            future_parts = sorted(remaining_parts - {str(x) for x in unique_parts_current})
+            prefill_pool = all_comps_info[all_comps_info["Name"].astype(str).isin(future_parts)]
+            prefill_pool = prefill_pool.merge(board_counts, on="Name", how="left")
+            prefill_pool["board_count"] = pd.to_numeric(prefill_pool["board_count"], errors="coerce").fillna(0).astype(int)
+            prefill_pool = prefill_pool.sort_values(by=["board_count", "Name"], ascending=[False, True])
+            cs_prefill = prefill_pool[prefill_pool["mm"] == 8]["Name"].astype(str).tolist()
+            pv_prefill = prefill_pool[prefill_pool["mm"] > 8][["Name", "mm"]]
             available_cs_slots = self.CS_BANK_SLOTS[: max(1, int(self.chip_feeder_limit))]
             available_cs_set = set(available_cs_slots)
             locked_cs_slots = set()
@@ -487,6 +566,8 @@ class SMTService:
                         locked_cs_slots.add(slot)
                     if name in unique_parts_current and slot in available_cs_set:
                         board_feeder_map[name] = {"batch": 1, "slot": info.get("slot"), "station": "ЧИПШУТЕР"}
+                    elif slot in available_cs_set:
+                        board_feeder_map[name] = {"batch": 1, "slot": info.get("slot"), "station": "ЧИПШУТЕР"}
 
             cs_unplaced = cs_needed[~cs_needed["Name"].isin(board_feeder_map.keys())]
             cs_unplaced = cs_unplaced.merge(board_counts, on="Name", how="left")
@@ -495,34 +576,34 @@ class SMTService:
             cs_unplaced = cs_unplaced.sort_values(
                 by=["shared_next", "board_count", "Name"],
                 ascending=[False, False, True],
-            )["Name"].tolist()
-            used_cs_slots_in_batch: Dict[int, set] = {}
+            )["Name"].astype(str).tolist()
+            cs_plan = cs_unplaced + [n for n in cs_prefill if n not in board_feeder_map and n not in cs_unplaced]
+            used_cs_slots = set()
 
             def assign_next_cs_slot(comp_name: str):
-                b = 1
-                while True:
-                    used_cs_slots_in_batch.setdefault(b, set())
-                    hist_info = self.global_feeder_map.get(comp_name)
-                    if hist_info and hist_info.get("station") == "ЧИПШУТЕР":
-                        s = hist_info.get("slot")
-                        if s in available_cs_set and s not in locked_cs_slots and s not in used_cs_slots_in_batch[b]:
-                            used_cs_slots_in_batch[b].add(s)
-                            return b, s
-                    for slot in available_cs_slots:
-                        if slot not in locked_cs_slots and slot not in used_cs_slots_in_batch[b]:
-                            used_cs_slots_in_batch[b].add(slot)
-                            return b, slot
-                    b += 1
-                    if b > 100:
-                        return None
+                hist_info = self.global_feeder_map.get(comp_name)
+                if hist_info and hist_info.get("station") == "ЧИПШУТЕР":
+                    s = str(hist_info.get("slot"))
+                    if s in available_cs_set and s not in locked_cs_slots and s not in used_cs_slots:
+                        used_cs_slots.add(s)
+                        return 1, s
+                for slot in available_cs_slots:
+                    if slot not in locked_cs_slots and slot not in used_cs_slots:
+                        used_cs_slots.add(slot)
+                        return 1, slot
+                return None
 
-            for name in cs_unplaced:
+            for name in cs_plan:
                 res = assign_next_cs_slot(name)
                 if res is None:
-                    raise SMTServiceError(f"Не удалось разместить '{name}' в чипшутере")
+                    if name in unique_parts_current:
+                        raise SMTServiceError(f"Не удалось разместить '{name}' в чипшутере")
+                    continue
                 b, s = res
                 board_feeder_map[name] = {"batch": b, "slot": s, "station": "ЧИПШУТЕР"}
                 self.global_feeder_map[name] = dict(board_feeder_map[name])
+                if name not in unique_parts_current:
+                    self.last_prefill_components.append(name)
 
             locked_pv_slots = set()
             for name in global_setup:
@@ -536,6 +617,8 @@ class SMTService:
                             locked_pv_slots.add(f"{prefix}{i}")
                     if name in unique_parts_current:
                         board_feeder_map[name] = {"batch": 1, "slot": info.get("slot"), "station": "ПАВУК"}
+                    else:
+                        board_feeder_map[name] = {"batch": 1, "slot": info.get("slot"), "station": "ПАВУК"}
 
             pv_unplaced = pv_needed[~pv_needed["Name"].isin(board_feeder_map.keys())]
             pv_unplaced = pv_unplaced.merge(board_counts, on="Name", how="left")
@@ -545,52 +628,55 @@ class SMTService:
                 by=["shared_next", "board_count", "Name"],
                 ascending=[False, False, True],
             )
-            pv_batch_usage: Dict[int, Dict[int, int]] = {}
-            pv_batch_slots_used: Dict[int, set] = {}
+            pv_plan = list(pv_unplaced[["Name", "mm"]].itertuples(index=False, name=None))
+            for _, row in pv_prefill.iterrows():
+                name = str(row["Name"])
+                if name not in board_feeder_map and all(name != n for n, _ in pv_plan):
+                    pv_plan.append((name, int(row["mm"])))
+            pv_batch_usage: Dict[int, int] = {s: 0 for s in self.tape_sizes}
+            pv_slots_used: set = set()
 
             def assign_pv(width: int, name: str) -> bool:
                 if self.tape_limits.get(width, 0) <= 0:
                     return False
                 slots_needed = 3 if width in (32, 44) else 2
-                b = 1
-                while True:
-                    pv_batch_usage.setdefault(b, {s: 0 for s in self.tape_sizes})
-                    pv_batch_slots_used.setdefault(b, set())
-                    if pv_batch_usage[b].get(width, 0) < self.tape_limits.get(width, 0):
-                        hist = self.global_feeder_map.get(name)
-                        if hist and hist.get("station") == "ПАВУК":
-                            base = str(hist.get("slot", "")).split(" ")[0]
-                            m = re.match(r"([LR])(\d+)-([LR])(\d+)", base)
-                            if m:
-                                prefix, start_n, end_n = m.group(1), int(m.group(2)), int(m.group(4))
-                                cluster = [f"{prefix}{i}" for i in range(start_n, end_n + 1)]
-                                if len(cluster) == slots_needed and all(c not in locked_pv_slots and c not in pv_batch_slots_used[b] for c in cluster):
-                                    assigned = f"{cluster[0]}-{cluster[-1]}"
-                                    for c in cluster:
-                                        pv_batch_slots_used[b].add(c)
-                                    pv_batch_usage[b][width] = pv_batch_usage[b].get(width, 0) + 1
-                                    board_feeder_map[name] = {"batch": b, "slot": f"{assigned} ({width}мм)", "station": "ПАВУК"}
-                                    self.global_feeder_map[name] = dict(board_feeder_map[name])
-                                    return True
-                        for prefix in ["L", "R"]:
-                            for start_idx in range(1, 21 - slots_needed + 1):
-                                cluster = [f"{prefix}{i}" for i in range(start_idx, start_idx + slots_needed)]
-                                if all(c not in locked_pv_slots and c not in pv_batch_slots_used[b] for c in cluster):
-                                    assigned = f"{cluster[0]}-{cluster[-1]}"
-                                    for c in cluster:
-                                        pv_batch_slots_used[b].add(c)
-                                    pv_batch_usage[b][width] = pv_batch_usage[b].get(width, 0) + 1
-                                    board_feeder_map[name] = {"batch": b, "slot": f"{assigned} ({width}мм)", "station": "ПАВУК"}
-                                    self.global_feeder_map[name] = dict(board_feeder_map[name])
-                                    return True
-                    b += 1
-                    if b > 50:
-                        return False
+                if pv_batch_usage.get(width, 0) >= self.tape_limits.get(width, 0):
+                    return False
+                hist = self.global_feeder_map.get(name)
+                if hist and hist.get("station") == "ПАВУК":
+                    base = str(hist.get("slot", "")).split(" ")[0]
+                    m = re.match(r"([LR])(\d+)-([LR])(\d+)", base)
+                    if m:
+                        prefix, start_n, end_n = m.group(1), int(m.group(2)), int(m.group(4))
+                        cluster = [f"{prefix}{i}" for i in range(start_n, end_n + 1)]
+                        if len(cluster) == slots_needed and all(c not in locked_pv_slots and c not in pv_slots_used for c in cluster):
+                            assigned = f"{cluster[0]}-{cluster[-1]}"
+                            for c in cluster:
+                                pv_slots_used.add(c)
+                            pv_batch_usage[width] = pv_batch_usage.get(width, 0) + 1
+                            board_feeder_map[name] = {"batch": 1, "slot": f"{assigned} ({width}мм)", "station": "ПАВУК"}
+                            self.global_feeder_map[name] = dict(board_feeder_map[name])
+                            return True
+                for prefix in ["L", "R"]:
+                    for start_idx in range(1, 21 - slots_needed + 1):
+                        cluster = [f"{prefix}{i}" for i in range(start_idx, start_idx + slots_needed)]
+                        if all(c not in locked_pv_slots and c not in pv_slots_used for c in cluster):
+                            assigned = f"{cluster[0]}-{cluster[-1]}"
+                            for c in cluster:
+                                pv_slots_used.add(c)
+                            pv_batch_usage[width] = pv_batch_usage.get(width, 0) + 1
+                            board_feeder_map[name] = {"batch": 1, "slot": f"{assigned} ({width}мм)", "station": "ПАВУК"}
+                            self.global_feeder_map[name] = dict(board_feeder_map[name])
+                            return True
+                return False
 
             skipped_mm = set()
-            for _, row in pv_unplaced.iterrows():
-                if not assign_pv(int(row["mm"]), str(row["Name"])):
-                    skipped_mm.add(int(row["mm"]))
+            for name, mm in pv_plan:
+                ok = assign_pv(int(mm), str(name))
+                if not ok and str(name) in unique_parts_current:
+                    skipped_mm.add(int(mm))
+                if ok and str(name) not in unique_parts_current:
+                    self.last_prefill_components.append(str(name))
             if skipped_mm:
                 self.summary["status"] = f"Для компонентов {sorted(skipped_mm)}мм нет свободных слотов/лимитов"
 
@@ -707,6 +793,7 @@ class SMTService:
                 raise SMTServiceError("Название компонента не может быть пустым")
             self._upsert_warehouse(str(num).strip(), str(name).strip(), int(width), int(qty))
             self._save_warehouse_data()
+            self._log(f"Добавлен складской остаток вручную: {name} ({qty} шт.)")
             return self.get_state()
 
     def upload_warehouse_excel(self, raw_bytes: bytes) -> Dict[str, Any]:
@@ -726,6 +813,7 @@ class SMTService:
             for _, row in df.iterrows():
                 self._upsert_warehouse(str(row["Номер"]), str(row["Название"]).strip(), int(row["ШиринаЛенты"]), int(row["Остаток"]))
             self._save_warehouse_data()
+            self._log("Склад загружен из Excel")
             return self.get_state()
 
     def _machine_visual_state(self) -> Dict[str, Any]:
@@ -767,7 +855,63 @@ class SMTService:
                 else:
                     status = "active" if name in curr_needed_active else "keep" if name in future_needed else "remove"
                 spider_slots.append({"slot": str(info.get("slot")), "component": name, "batch": int(info.get("batch", 1)), "status": status})
-        return {"chipshooter": chip_slots, "spider": spider_slots}
+            return {"chipshooter": chip_slots, "spider": spider_slots}
+
+    def clear_zero_stock_positions(self) -> Dict[str, Any]:
+        with self._lock:
+            if self.warehouse_data.empty:
+                self._log("Очистка нулевых позиций: склад уже пуст")
+                return self.get_state()
+            self.warehouse_data["Остаток"] = pd.to_numeric(self.warehouse_data["Остаток"], errors="coerce").fillna(0).astype(int)
+            self.warehouse_data = self.warehouse_data[self.warehouse_data["Остаток"] > 0].reset_index(drop=True)
+            self._save_warehouse_data()
+            self._log("Очистка нулевых позиций выполнена")
+            return self.get_state()
+
+    def emergency_clear_warehouse(self) -> Dict[str, Any]:
+        with self._lock:
+            self.warehouse_data = pd.DataFrame(columns=["Номер", "Название", "ШиринаЛенты", "Катушка", "Остаток"])
+            self._save_warehouse_data()
+            self._log("Экстренная очистка склада выполнена")
+            return self.get_state()
+
+    def clear_project(self) -> Dict[str, Any]:
+        with self._lock:
+            self.all_data = None
+            self.boards = []
+            self.current_board = ""
+            self.global_feeder_map = {}
+            self.feeder_map = {}
+            self.setup_completed = {}
+            self.instr_completed = {}
+            self.batch_stock_deducted = {}
+            self.batch_comps = {}
+            self.pending_remove_components = []
+            self.last_prefill_components = []
+            self.table_setup = []
+            self.table_instr = []
+            self.summary.update({
+                "status": "Проект очищен. Загрузите новый BOM",
+                "total_parts": 0,
+                "unique_parts": 0,
+                "feeders_used": "",
+                "next_board": "",
+                "recharge_warning": "",
+                "shortages": [],
+                "pending_remove": 0,
+            })
+            try:
+                if self.bom_file.exists():
+                    self.bom_file.unlink()
+            except OSError:
+                pass
+            try:
+                if self.progress_file.exists():
+                    self.progress_file.unlink()
+            except OSError:
+                pass
+            self._log("Текущий проект очищен (склад сохранён)")
+            return self.get_state()
 
     def _progress(self) -> List[Dict[str, Any]]:
         done = set(self.instr_completed.get(self.current_board, [])) if self.current_board else set()
@@ -793,6 +937,7 @@ class SMTService:
                 "pending_remove_components": self.pending_remove_components,
                 "warehouse": [] if self.warehouse_data.empty else self.warehouse_data.to_dict("records"),
                 "visual": self._machine_visual_state(),
+                "logs": self.log_console,
             }
 
 
