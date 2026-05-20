@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -44,7 +45,12 @@ class ManualWarehouseRequest(BaseModel):
 app = FastAPI(title="SMT Navigator Web API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-static_dir = Path(__file__).resolve().parent.parent / "static"
+root_dir = Path(__file__).resolve().parent.parent
+static_dir = root_dir / "static"
+if not static_dir.exists():
+    alt_static = root_dir / "static ui"
+    if alt_static.exists():
+        static_dir = alt_static
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
@@ -127,3 +133,29 @@ def add_manual_warehouse(req: ManualWarehouseRequest):
 async def upload_warehouse(file: UploadFile = File(...)):
     raw = await file.read()
     return _result(lambda: service.upload_warehouse_excel(raw))
+
+
+@app.post("/api/warehouse/clear-zero")
+def clear_zero_warehouse():
+    return _result(service.clear_zero_stock_positions)
+
+
+@app.post("/api/warehouse/clear-all")
+def clear_all_warehouse():
+    return _result(service.emergency_clear_warehouse)
+
+
+@app.post("/api/project/clear")
+def clear_project():
+    return _result(service.clear_project)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("SMT_HOST", "0.0.0.0"),
+        port=int(os.getenv("SMT_PORT", "8000")),
+        reload=os.getenv("SMT_RELOAD", "0") == "1",
+    )

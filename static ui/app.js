@@ -129,6 +129,11 @@ function render() {
     whTable.innerHTML = '<tr><th>Номер</th><th>Название</th><th>Ширина</th><th>Катушка</th><th>Остаток</th></tr>' +
       wh.map(r => `<tr><td>${r['Номер']}</td><td>${r['Название']}</td><td>${r['ШиринаЛенты']}</td><td>${r['Катушка']}</td><td>${r['Остаток']}</td></tr>`).join('');
   }
+
+  const logConsole = document.getElementById('logConsole');
+  const logs = d.logs || [];
+  logConsole.textContent = logs.length ? logs.join('\n') : 'Нет сообщений';
+  logConsole.scrollTop = logConsole.scrollHeight;
 }
 
 async function refresh() {
@@ -206,6 +211,20 @@ document.getElementById('addWhBtn').onclick = async () => {
   const width = Number(document.getElementById('whWidth').value || 8);
   const qty = Number(document.getElementById('whQty').value || 0);
   await withRefresh(() => api('/api/warehouse/manual', 'POST', { num, name, width, qty }));
+};
+
+document.getElementById('clearZeroWhBtn').onclick = async () => {
+  await withRefresh(() => api('/api/warehouse/clear-zero', 'POST'));
+};
+
+document.getElementById('clearAllWhBtn').onclick = async () => {
+  if (!confirm('Полностью очистить склад? Действие необратимо.')) return;
+  await withRefresh(() => api('/api/warehouse/clear-all', 'POST'));
+};
+
+document.getElementById('clearProjectBtn').onclick = async () => {
+  if (!confirm('Очистить текущий проект (BOM и карта станка), не трогая склад?')) return;
+  await withRefresh(() => api('/api/project/clear', 'POST'));
 };
 
 document.getElementById('saveBoardMultiplierBtn').onclick = async () => {
